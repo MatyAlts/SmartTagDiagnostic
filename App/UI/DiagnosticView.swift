@@ -5,11 +5,23 @@ import SmartTagCore
 struct DiagnosticView: View {
     @StateObject private var account = SamsungAccountClient(isUITesting: ProcessInfo.processInfo.arguments.contains("-ui-testing"))
     @StateObject private var bluetooth = TagBluetoothClient()
+    @StateObject private var nearby = NearbyInteractionClient()
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTagID: String?
     @State private var selectedCandidateID: UUID?
     @State private var localError: String?
+    @State private var selectedUWBProfile = 2
     private var selectedTag: TagDevice? { account.devices.first { $0.id == selectedTagID } }
     private var testing: Bool { ProcessInfo.processInfo.arguments.contains("-ui-testing") }
+    private var uwbVersion: AppleUWBVersion {
+        if #available(iOS 26.1, *), selectedUWBProfile == 2 { return .v2 }
+        return .v1
+    }
+
+    private func stopUWB() {
+        nearby.stop()
+        bluetooth.stopUWB()
+    }
 
     private func metadataProblem(_ device: TagDevice) -> String {
         do {
@@ -34,7 +46,7 @@ struct DiagnosticView: View {
                         Button("Actualizar etiquetas") { Task { await account.loadDevices() } }
                             .disabled(account.isBusy || bluetooth.isBusy)
                         Button("Cerrar sesión", role: .destructive) {
-                            bluetooth.clear(); account.signOut()
+                            stopUWB(); bluetooth.clear(); account.signOut()
                             selectedTagID = nil; selectedCandidateID = nil; localError = nil
                         }
                     } else {
@@ -50,7 +62,7 @@ struct DiagnosticView: View {
                         }
                         ForEach(account.devices) { device in
                             Button {
-                                bluetooth.clear(); selectedTagID = device.id
+                                stopUWB(); bluetooth.clear(); selectedTagID = device.id
                                 selectedCandidateID = nil; localError = nil
                             } label: {
                                 HStack {
@@ -68,10 +80,10 @@ struct DiagnosticView: View {
                 if let tag = selectedTag {
                     Section("Prueba Bluetooth") {
                         Button("Buscar dispositivos cercanos") {
-                            selectedCandidateID = nil; localError = nil; bluetooth.scan()
+                            stopUWB(); selectedCandidateID = nil; localError = nil; bluetooth.scan()
                         }.disabled(bluetooth.isBusy || !tag.metadataReady)
                         ForEach(bluetooth.candidates) { candidate in
-                            Button { selectedCandidateID = candidate.id } label: {
+                            Button { stopUWB(); selectedCandidateID = candidate.id } label: {
                                 HStack {
                                     VStack(alignment: .leading) {
                                         Text(candidate.name)
@@ -86,7 +98,7 @@ struct DiagnosticView: View {
                         }
                         Button("Autenticar y leer batería") {
                             guard let id = selectedCandidateID else { return }
-                            do { bluetooth.connect(candidateID: id, credentials: try tag.credentials()) }
+                            do { stopUWB(); bluetooth.connect(candidateID: id, credentials: try tag.credentials()) }
                             catch { localError = "No se pudo preparar la autenticación: \(error.localizedDescription)" }
                         }.disabled(bluetooth.isBusy || selectedCandidateID == nil || !tag.metadataReady)
                         if bluetooth.isBusy { ProgressView("Procesando Bluetooth…") }
@@ -97,18 +109,51 @@ struct DiagnosticView: View {
                         } else {
                             Text("Todavía no hay una lectura de batería.").foregroundStyle(.secondary)
                         }
-                        Button("Desconectar y limpiar") { bluetooth.clear(); selectedCandidateID = nil }
+                        Button("Desconectar y limpiar") { nearby.clear(); bluetooth.clear(); selectedCandidateID = nil }
+                    }
+                    Section {
+                        if #available(iOS 26.1, *) {
+                            Picker("Perfil experimental", selection: $selectedUWBProfile) {
+                                Text("1.1").tag(1)
+                                Text("2.0").tag(2)
+                            }.disabled(bluetooth.isBusy || nearby.isRunning)
+                        }
+                        Button("Iniciar prueba UWB") {
+                            guard let id = selectedCandidateID else { return }
+                            nearby.clear(); localError = nil
+                            do { bluetooth.connect(candidateID: id, credentials: try tag.credentials(), forUWB: true) }
+                            catch { localError = "No se pudo preparar la prueba UWB." }
+                        }
+                        .disabled(testing || !nearby.supportsUWB || bluetooth.isBusy || nearby.isRunning || selectedCandidateID == nil || !tag.metadataReady)
+                        .accessibilityIdentifier("startUWB")
+                        Button("Detener prueba UWB") { stopUWB() }
+                            .disabled(!nearby.isRunning && !bluetooth.uwbReady && !bluetooth.uwbActive)
+                        Text(nearby.phase).foregroundStyle(.secondary)
+                        if let distance = nearby.distanceMeters {
+                            LabeledContent("Distancia UWB") {
+                                Text(distance, format: .number.precision(.fractionLength(2))) + Text(" m")
+                            }.accessibilityIdentifier("uwbDistance")
+                        } else {
+                            Text("Sin medición de distancia").foregroundStyle(.secondary)
+                        }
+                        if !nearby.supportsUWB {
+                            Text("Este dispositivo no admite medición precisa UWB.").foregroundStyle(.secondary)
+                        }
+                    } header: {
+                        Text("Prueba experimental UWB")
+                    } footer: {
+                        Text("Mantené la app abierta. La compatibilidad UWB aún no está confirmada. Si falla, detené la prueba y probá el otro perfil disponible. Solo se muestran metros recibidos de Nearby Interaction.")
                     }
                 }
-                if let message = localError ?? account.errorMessage ?? bluetooth.errorMessage {
+                if let message = localError ?? account.errorMessage ?? bluetooth.errorMessage ?? nearby.errorMessage {
                     Section("No se pudo completar") { Text(message).foregroundStyle(.red).accessibilityLabel("Error: \(message)") }
                 }
                 Section {
-                    NavigationLink("Registro técnico") { EventLogView(events: bluetooth.events) }
+                    NavigationLink("Registro técnico") { EventLogView(events: bluetooth.events + nearby.events) }
                     NavigationLink("Acerca de la prueba") {
                         List {
                             Text("Diagnóstico experimental independiente. La aceptación del inicio de sesión en iOS y la interoperabilidad Bluetooth requieren pruebas reales.")
-                            Text("Solo consulta autenticación y batería. No ofrece búsqueda UWB ni modifica el firmware.")
+                            Text("Consulta autenticación y batería e incluye una prueba experimental UWB. La compatibilidad UWB con la etiqueta todavía no está demostrada. No modifica el firmware.")
                             Text("Los eventos no incluyen claves ni tokens. Cerrar sesión elimina la sesión guardada y limpia la conexión.")
                         }.navigationTitle("Acerca de").navigationBarTitleDisplayMode(.inline)
                     }
@@ -117,6 +162,19 @@ struct DiagnosticView: View {
             .listStyle(.insetGrouped)
             .navigationTitle("Diagnóstico Tag")
         }.tint(.blue)
+        .onChange(of: bluetooth.uwbReady) { _, ready in
+            if ready {
+                nearby.start(version: uwbVersion,
+                             sendConfiguration: { bluetooth.sendUWBConfiguration($0) },
+                             acceptDistance: { bluetooth.acceptUWBDistance($0) },
+                             onStop: { bluetooth.stopUWB() })
+            } else if nearby.isRunning {
+                nearby.stop()
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in if phase == .background { stopUWB() } }
+        .onChange(of: account.isSignedIn) { _, signedIn in if !signedIn { stopUWB() } }
+        .onDisappear { stopUWB() }
     }
 }
 

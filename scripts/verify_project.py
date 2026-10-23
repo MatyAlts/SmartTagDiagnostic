@@ -23,6 +23,8 @@ def inspect_metadata(info):
     errors = []
     if not info.get('NSBluetoothAlwaysUsageDescription', '').strip():
         errors.append('Bluetooth permission explanation is missing')
+    if not info.get('NSNearbyInteractionUsageDescription', '').strip():
+        errors.append('Nearby Interaction permission explanation is missing')
     schemes = [scheme for entry in info.get('CFBundleURLTypes', [])
                for scheme in entry.get('CFBundleURLSchemes', [])]
     if 'ms-app' not in schemes:
@@ -54,7 +56,7 @@ def main():
         errors = inspect_artifact(artifact)
         if errors:
             raise SystemExit('\n'.join(errors))
-        print('PASS: built app launch configuration, iPhone family, Bluetooth privacy and callback.')
+        print('PASS: built app launch configuration, iPhone family, Bluetooth/Nearby Interaction privacy and callback.')
         return
     root = Path(__file__).resolve().parents[1]
     errors = inspect_plist(root / 'App/Info.plist')

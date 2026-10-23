@@ -41,9 +41,34 @@ class ConfigurationSafetyTests(unittest.TestCase):
     def test_minimal_scoped_configuration_is_accepted(self):
         errors = self.check_plist({
             'NSBluetoothAlwaysUsageDescription': 'Read owned tag battery',
+            'NSNearbyInteractionUsageDescription': 'Measure distance to an owned tag',
             'CFBundleURLTypes': [{'CFBundleURLSchemes': ['ms-app']}],
             'UILaunchScreen': {}})
         self.assertEqual([], errors)
+
+    def test_missing_nearby_interaction_purpose_is_rejected(self):
+        values = {
+            'CFBundleIdentifier': 'org.local.SmartTagDiagnostic',
+            'NSBluetoothAlwaysUsageDescription': 'Read owned tag battery',
+            'CFBundleURLTypes': [{'CFBundleURLSchemes': ['ms-app']}],
+            'UILaunchScreen': {}, 'UIDeviceFamily': [1]}
+        self.assertEqual(['Nearby Interaction permission explanation is missing'],
+                         self.check_plist(values))
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory) / 'SmartTagDiagnostic.app'
+            app.mkdir()
+            (app / 'Info.plist').write_bytes(plistlib.dumps(values))
+            self.assertEqual(['Nearby Interaction permission explanation is missing'],
+                             inspect_artifact(app))
+
+    def test_blank_nearby_interaction_purpose_is_rejected(self):
+        values = {
+            'NSBluetoothAlwaysUsageDescription': 'Read owned tag battery',
+            'NSNearbyInteractionUsageDescription': '  \n\t',
+            'CFBundleURLTypes': [{'CFBundleURLSchemes': ['ms-app']}],
+            'UILaunchScreen': {}}
+        self.assertEqual(['Nearby Interaction permission explanation is missing'],
+                         self.check_plist(values))
 
     def test_missing_launch_configuration_is_rejected(self):
         errors = self.check_plist({
@@ -55,6 +80,7 @@ class ConfigurationSafetyTests(unittest.TestCase):
         values = {
             'CFBundleIdentifier': 'org.local.SmartTagDiagnostic',
             'NSBluetoothAlwaysUsageDescription': 'Read owned tag battery',
+            'NSNearbyInteractionUsageDescription': 'Measure distance to an owned tag',
             'CFBundleURLTypes': [{'CFBundleURLSchemes': ['ms-app']}],
             'UILaunchScreen': {}, 'UIDeviceFamily': [1]}
         with tempfile.TemporaryDirectory() as directory:

@@ -10,6 +10,7 @@
 <key>CFBundleVersion</key><string>1</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>NSBluetoothAlwaysUsageDescription</key><string>Conectar con tu SmartTag para autenticar y consultar su batería.</string>
+<key>NSNearbyInteractionUsageDescription</key><string>Probar la medición experimental de distancia UWB con tu SmartTag mientras la app está abierta.</string>
 <key>UILaunchScreen</key><dict/>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
 <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLSchemes</key><array><string>ms-app</string></array></dict></array>
