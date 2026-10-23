@@ -1,5 +1,15 @@
 # Experimental UWB trial
 
+## Prueba física en el iPhone
+
+1. Firmá el nuevo IPA sin firmar e instalalo en el iPhone como las versiones anteriores.
+2. Iniciá sesión si hace falta, actualizá las etiquetas y seleccioná **Cleo**. Tocá **Buscar dispositivos cercanos** y seleccioná el dispositivo que ya permitió leer su batería.
+3. Dejá el **Perfil experimental 2.0**, seleccionado por defecto en iOS 26.1 o posterior, y tocá **Iniciar prueba UWB**. La app vuelve a autenticar la conexión Bluetooth y lee la batería automáticamente antes de preparar UWB; no hace falta ejecutar antes la prueba de batería.
+4. Aceptá el permiso de Nearby Interaction si aparece y mantené la app abierta en primer plano, con Cleo cerca. Comprobá si aparece **Distancia UWB** en metros y si cambia al mover la etiqueta.
+5. Si falla, tocá **Detener prueba UWB** antes de seleccionar el perfil **1.1** y comenzar otra prueba. Detené también la prueba al terminar.
+
+Todavía no se ha demostrado una medición real con Cleo. Una conexión Bluetooth, una batería leída o una configuración aceptada no confirman UWB. Si no aparecen metros, compartí el mensaje de estado y el **Registro técnico** de la app, que usa diagnósticos sanitizados; no compartas claves, tokens ni la URL de retorno del inicio de sesión.
+
 ## Apple configuration bridge
 
 The trial uses public Nearby Interaction foreground accessory APIs. Its compatibility with SmartTag2 firmware is unproven. Configuration acceptance and Bluetooth write acknowledgements do not establish a distance measurement.
