@@ -29,6 +29,7 @@ public enum UWBDiagnostics {
         case AppleUWBProtocolError.unsupportedVersion: reason = "versión no admitida"
         case AppleUWBProtocolError.unsupportedRadioParameters: reason = "parámetros de radio o dirección interna no admitidos"
         case SamsungUWBError.unsupportedProfile: reason = "parámetros fuera del perfil experimental"
+        case SamsungUWBError.addressCollision: reason = "colisión de direcciones internas en el formato enviado"
         default: reason = "configuración no admitida"
         }
         return "Etapa: \(label). Motivo: \(reason)."
