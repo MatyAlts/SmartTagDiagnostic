@@ -23,8 +23,8 @@ The app's NI watchdog starts before sharing/configuration while BLE ranging star
 Address representation trial is an explicit experiment, not a verified fix: retain baseline, tag-only swap, phone-only swap and both. Change only Samsung offsets9–12; preserve Apple input/output numeric meaning, session/vendor/IV/header/timings. Reject effective wire-address collisions. Every trial has the same measurement success criterion.
 
 ## Tasks and routes
-- [ ] U1: Document the independent profile/sequence audit with primary evidence, source limitations and unknowns. Delegated direct: 4+file mapping and broad research. Read-only research completed; report source write follows this tracker. Check exact source links/offsets and distinguish facts, hypotheses and negative-search bounds.
-- [ ] U2: Implement the bounded Samsung address-mode codec and regression vectors. Delegated direct: nontrivial codec/diagnostic/tests files. Check default packet unchanged, exact four-mode differing offsets, asymmetric addresses, unchanged session/vendor/IV, invalid inputs and effective collisions. No unproved radio-default change.
+- [x] U1: Document the independent profile/sequence audit with primary evidence, source limitations and unknowns. Delegated direct: 4+file mapping and broad research. Read-only research completed; report source write follows this tracker. Check exact source links/offsets and distinguish facts, hypotheses and negative-search bounds.
+- [x] U2: Implement the bounded Samsung address-mode codec and regression vectors. Delegated direct: nontrivial codec/diagnostic/tests files. Check default packet unchanged, exact four-mode differing offsets, asymmetric addresses, unchanged session/vendor/IV, invalid inputs and effective collisions. No unproved radio-default change.
 - [ ] U3: Correct stage deadlines, observe framework running, and wire explicitly experimental UI controls and safe diagnostics. Delegated direct: native bridge/UI/policy/tests multiple files. Check slow setup preserves full post-ACK budget, stale generation/events ignored, no distance from ACK/echo/running event, stage-specific failures; selected address mode reaches only Samsung encoder and is fixed during a trial.
 - [ ] U4: Build/test/archive, retrieve and verify IPA, record handoff. Inline remote orchestration with delegated fixes if needed. Check native/Python suites, generated metadata, archive/IPA, ZIP CRC, arm64 executable, unsigned/no profile, simulator capture. Physical tests remain owner action.
 
@@ -32,4 +32,10 @@ Address representation trial is an explicit experiment, not a verified fix: reta
 Forecast350–550 authored additions+deletions; 400 is advisory, never code shrinking. Cached user-selected stacked-to-main delivery applies. Prospective coherent slices: audit report; codec+vectors; native timing/UI+tests. No PR created. Each task closes with a work-unit Conventional Commit and observed checks. Rollback this branch after54e6dea to restore T11. No actual timeout-cause or UWB-success claim without physical evidence.
 
 ## Progress
-- Initial audits complete read-only; source work not yet started. Track profile changes as experiments unless supported independently.
+- Independent audits and implementation complete; full native integration/archive verification in progress. Address changes remain experiments.
+
+- U1 completed in1784425: docs/UWB-PROFILE-AUDIT.md (100lines) read back and whitespace checked; current primary public API/official indexed tables and pinned uTag evidence distinguish facts from unresolved firmware/over-air behavior. Full Apple PDFs inaccessible; no actual timeout cause proved.
+- U2 tests e42895a: native RED39951510225 missing SamsungUWBAddressMode/addressMode and collision API observed before core production8273db3. U3 tests6e467df add8policy+2bridge cases; run39951937931 will establish coreGREEN and reach AppRED before native production. Baseline localPython12PASS.
+
+- U2 GREEN observed39951937931:63core tests and12Python pass. Production8273db3 preserves baseline and tests all four modes, collisions and invalid inputs.
+- U3 App RED39951937931 observed before production90e3218. Eight policy and two bridge tests supplement unchanged baseline; full GREEN/archive run39952971278 in progress. Separate monotonic setup/post-ACK deadlines; safe observed callback/counters; UI mode locks and current-attempt ACK checks. No physical timeout-cause claim.
