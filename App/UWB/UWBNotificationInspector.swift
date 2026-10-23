@@ -3,15 +3,16 @@ import SmartTagCore
 
 /// Inspects the established incoming encrypted frame, without interpreting UWB payloads.
 enum UWBNotificationInspector {
+    enum Comparison: Equatable { case matches, different, notAvailable }
     enum Result: Equatable {
-        case accepted(payloadLength: Int)
+        case accepted(payloadLength: Int, comparison: Comparison)
         case invalidCiphertext
         case invalidFrame
         case replayRejected
     }
 
     static func inspect(ciphertext: Data, master: Data, tagNonce: Data,
-                        replay: inout ReplayCounter) -> Result {
+                        replay: inout ReplayCounter, expectedConfiguration: Data? = nil) -> Result {
         let plaintext: Data
         do {
             let key = SmartTagCrypto.derive(master: master, context: tagNonce)
@@ -29,6 +30,13 @@ enum UWBNotificationInspector {
         catch { return .invalidFrame }
         do { try replay.accept(frame.counter) }
         catch { return .replayRejected }
-        return .accepted(payloadLength: frame.payload.count)
+        let comparison: Comparison
+        if let expectedConfiguration, expectedConfiguration.count == 35 {
+            if frame.payload.count == expectedConfiguration.count {
+                let difference = zip(frame.payload, expectedConfiguration).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) }
+                comparison = difference == 0 ? .matches : .different
+            } else { comparison = .different }
+        } else { comparison = .notAvailable }
+        return .accepted(payloadLength: frame.payload.count, comparison: comparison)
     }
 }

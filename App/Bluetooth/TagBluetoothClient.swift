@@ -47,6 +47,7 @@ struct NearbyTag: Identifiable {
     private var commandCounter = UWBCommandCounter()
     private enum UWBWrite: Equatable { case start, configuration, stop }
     private var pendingUWBWrite: UWBWrite?
+    private var expectedUWBConfiguration: Data?
     private var queuedStop = false
     private var connectionLifecycle = BLEConnectionLifecycle()
     private var attemptDelegate: BLEAttemptDelegate?
@@ -107,6 +108,7 @@ struct NearbyTag: Identifiable {
     }
 
     private func finishDisconnect() {
+        expectedUWBConfiguration = nil
         if connectionLifecycle.state == .disconnecting { return }
         pendingScan = false; central?.stopScan(); timeout?.cancel()
         guard let peripheral, let generation = connectionLifecycle.currentGeneration else {
@@ -156,6 +158,7 @@ struct NearbyTag: Identifiable {
     }
 
     private func resetHandshake() {
+        expectedUWBConfiguration = nil
         phoneNonce = Data(); tagNonce = nil; characteristics = [:]
         authentication = AuthenticationProgress()
         proofVerified = false; batteryRequested = false; replay = ReplayCounter()
@@ -168,6 +171,7 @@ struct NearbyTag: Identifiable {
         if events.count > 100 { events.removeFirst(events.count - 100) }
     }
     private func fail(_ message: String) {
+        expectedUWBConfiguration = nil
         errorMessage = message; log(message)
         if forUWB { performUWB(uwbFlow.receive(.failure)) }
         else { finishDisconnect() }
@@ -238,6 +242,7 @@ struct NearbyTag: Identifiable {
     }
 
     func stopUWB() {
+        expectedUWBConfiguration = nil
         uwbReady = false; uwbActive = false
         guard forUWB else { finishDisconnect(); return }
         performUWB(uwbFlow.receive(.cancel))
@@ -260,6 +265,7 @@ struct NearbyTag: Identifiable {
             phase = "Enviando parámetros UWB"
             writeUWB(.configuration, payload: data, characteristic: Self.uwbParameters)
         case .writeStop:
+            expectedUWBConfiguration = nil
             uwbReady = false; uwbActive = false; queuedStop = true
             phase = "Deteniendo UWB"; armTimeout(seconds: 3)
             flushUWBStop()
@@ -291,6 +297,9 @@ struct NearbyTag: Identifiable {
                 throw TagProtocolError.invalidLength
             }
             pendingUWBWrite = kind
+            if kind == .configuration {
+                expectedUWBConfiguration = payload.count == 35 ? payload : nil
+            }
             peripheral.writeValue(encrypted, for: characteristic, type: .withResponse)
             armTimeout(seconds: uwbFlow.state == .stopping ? 3 : 15)
         } catch {
@@ -473,9 +482,15 @@ extension TagBluetoothClient: CBPeripheralDelegate {
                 log("No se pudo leer la notificación UWB."); return
             }
             switch UWBNotificationInspector.inspect(ciphertext: value,
-                master: credentials.masterSecret, tagNonce: tagNonce, replay: &replay) {
-            case .accepted(let payloadLength):
+                master: credentials.masterSecret, tagNonce: tagNonce, replay: &replay,
+                expectedConfiguration: expectedUWBConfiguration) {
+            case .accepted(let payloadLength, let comparison):
                 log("Notificación UWB descifrada: carga de \(payloadLength) bytes; contenido desconocido, sin medición de distancia.")
+                switch comparison {
+                case .matches: log("Comparación con el paquete enviado: coincide exactamente; no confirma éxito de radio.")
+                case .different: log("Comparación con el paquete enviado: diferente; significado desconocido.")
+                case .notAvailable: log("Comparación con el paquete enviado: no disponible.")
+                }
             case .invalidCiphertext:
                 log("Notificación UWB descartada: cifrado o relleno no válido.")
             case .invalidFrame:
