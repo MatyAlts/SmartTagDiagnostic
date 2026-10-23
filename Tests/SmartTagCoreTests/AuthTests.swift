@@ -2,6 +2,35 @@ import XCTest
 @testable import SmartTagCore
 
 final class AuthTests: XCTestCase {
+    func testObservedRegionalCallbackOriginIsAccepted() throws {
+        for value in ["us-auth2.samsungosp.com", "https://us-auth2.samsungosp.com", "https://US-AUTH2.SAMSUNGOSP.COM/"] {
+            let url = try SamsungAuth.server(value)
+            XCTAssertEqual(url.scheme, "https")
+            XCTAssertEqual(url.host?.lowercased(), "us-auth2.samsungosp.com")
+        }
+        for value in ["account.samsung.com", "https://samsung.com/"] {
+            XCTAssertNoThrow(try SamsungAuth.server(value))
+        }
+    }
+    func testRegionalCallbackTrustDoesNotExpandOtherStages() {
+        let origin = "https://us-auth2.samsungosp.com"
+        XCTAssertThrowsError(try SamsungAuth.server(origin, stage: .entrySignIn))
+        XCTAssertThrowsError(try SamsungAuth.server(origin, stage: .pagination))
+        XCTAssertThrowsError(try SamsungAuth.page(origin + "/devices", relativeTo: URL(string: "https://client.smartthings.com/devices")!))
+        XCTAssertNoThrow(try SamsungAuth.server("https://account.samsung.com", stage: .entrySignIn))
+    }
+    func testRegionalCallbackRejectsUnverifiedHostsAndNonOriginComponents() {
+        for value in [
+            "https://us-auth2.samsungosp.com.evil.test", "https://evil.us-auth2.samsungosp.com",
+            "https://us-auth3.samsungosp.com", "https://eu-auth2.samsungosp.com", "https://samsungosp.com",
+            "http://us-auth2.samsungosp.com", "https://us-auth2.samsungosp.com:443",
+            "https://user@us-auth2.samsungosp.com", "https://user:password@us-auth2.samsungosp.com",
+            "https://us-auth2.samsungosp.com/auth", "https://us-auth2.samsungosp.com?code=secret",
+            "https://us-auth2.samsungosp.com#secret"
+        ] {
+            XCTAssertThrowsError(try SamsungAuth.server(value), value)
+        }
+    }
     func testRejectedCallbackReportsOnlyHostnameAndFixedStage() {
         let error = SamsungAuth.rejectedURL("https://username:password@Regional.Example.test/private/code?token=secret#fragment", stage: .callbackServer)
         XCTAssertEqual(error.errorDescription, "Se rechazó una dirección de servidor inesperada. Etapa: retorno de Samsung (auth_server_url). Servidor: regional.example.test.")
