@@ -45,7 +45,17 @@ final class AccountSecurityTests: XCTestCase {
     func testMalformedCallbackCiphertextRejected() {
         let key = "abcdefghijklmnop"
         for hex in ["", "0", "zz", "00", String(repeating: "a", count: 65538)] {
-            XCTAssertThrowsError(try AccountSecurity.decryptHex(hex, key: key))
+            XCTAssertThrowsError(try AccountSecurity.decryptHex(hex, key: key), "Accepted malformed hex of length \(hex.count)")
+        }
+    }
+
+    func testCallbackCiphertextRequiresCompleteAESBlocks() throws {
+        let key = "abcdefghijklmnop"
+        let encrypted = try AccountSecurity.crypt(Data("callback".utf8), key: Data(key.utf8))
+        XCTAssertEqual(try AccountSecurity.decryptHex(encrypted.hex, key: key), "callback")
+        for byteCount in [1, 15, 17, 31, 33] {
+            let malformed = Data(repeating: 0, count: byteCount)
+            XCTAssertThrowsError(try AccountSecurity.decryptHex(malformed.hex, key: key), "Accepted \(byteCount) ciphertext bytes")
         }
     }
 

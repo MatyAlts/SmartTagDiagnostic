@@ -32,7 +32,9 @@ enum AccountSecurity {
         return output.prefix(count)
     }
     static func decryptHex(_ text: String, key: String) throws -> String {
-        guard text.count % 2 == 0, text.count <= 65536, text.allSatisfy({ $0.isHexDigit }) else { throw AccountError.callback }
+        // AES ciphertext must contain whole blocks, including the PKCS7 padding block.
+        guard !text.isEmpty, text.count % (2 * kCCBlockSizeAES128) == 0,
+              text.count <= 65536, text.allSatisfy({ $0.isHexDigit }) else { throw AccountError.callback }
         var data = Data(); var index = text.startIndex
         while index < text.endIndex {
             let end = text.index(index, offsetBy: 2)
