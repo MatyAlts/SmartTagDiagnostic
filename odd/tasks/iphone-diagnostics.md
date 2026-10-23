@@ -23,7 +23,17 @@ User can start login, select an actual device, see missing/cipher metadata error
 ## Progress and evidence
 - Explored workspace: only two supplied application archives, no existing repository/code. Created isolated project repository.
 - Native runner absent; native tests and simulator visuals cannot be executed here.
-- Next: delegate bounded writers with shared contracts; reconcile integration, run available verification, commit reviewable work units.
+- T1 source delivered and independently inspected: validated crypto, an authentication reducer with authored tests, explicit nearby selection, lazy Bluetooth initialization and battery read. Python hashlib KDF vectors and cryptography AES known answer passed. XCTest authored first; native RED/GREEN and tag checks pending.
+- T2 source delivered: Samsung browser/PKCE flow, encrypted callback, Keychain, V7 metadata, refresh, URL/state validation, and logout-generation guards. Native account-crypto fixtures and negative metadata/URL tests authored. Live callback/server compatibility and native tests pending.
+- T3 source delivered: native Spanish UI, generator, manual/PR macOS workflow, unsigned IPA packaging, simulator/app-unit test targets, setup/provenance/license docs. Portable configuration suite observed RED (missing verifier) then GREEN: 3/3; plist/reference checks and YAML parses passed. Static findings fixed; no visual/runtime approval claimed.
+- Simulator/hardware and all Swift test execution are still pending; tasks above remain unchecked for these required verification outcomes. Source implementation is delivered.
+- Source QA: all reported static integration fixes resolved, including explicit app-test package dependency. No native RDD run (disabled/unmanaged).
+- App-bridge XCTest adds six PBKDF2/AES/callback/SPKI cases; total native test methods: 26 (not executed). UI fixture bypasses Keychain/network; Bluetooth is initialized only on explicit scan. Static fixes rechecked without claiming native validation.
+- Next: final portable recheck and checkpoint; an authorized macOS build is required before installation.
 
 ## Commit boundaries
-Pending. Checkboxes close only with observed outcomes; pending native checks remain stated even when source delivery is complete.
+- Bootstrap `2381a11`: isolated feature tracker; `main` points to this initial boundary, implementation stays on `feat/iphone-diagnostics`.
+- T1 `cbe029a`: protocol + BLE + tests/docs, 529 authored lines. One cohesive local commit; for future stacked PRs the core (283 lines) and transport (246 lines) are natural review slices. No PR created, no size-only code shrinking; native tests pending.
+- T2 `386caa1`: owner session, metadata, Keychain, tests and provenance; 577 authored lines plus 674-line verbatim upstream GPL license. A cohesive account unit exceeds the planning heuristic; future review can separate the pure account contracts from the iOS bridge, without shortening source/tests to fit. No PR created.
+- Running authored count T1+T2: 1,106 (upstream LICENSE excluded). T3 commit pending.
+- Rollback T1: remove protocol/core tests, BLE transport and protocol notes/manifest as a unit; no account data exists. Rollback T2: remove account core/bridge/tests and account notes; no live account data exists. Retain license/provenance for any remaining derived source.

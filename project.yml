@@ -1,0 +1,56 @@
+name: SmartTagDiagnostic
+options:
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  SmartTagCore:
+    path: .
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+targets:
+  SmartTagDiagnostic:
+    type: application
+    platform: iOS
+    sources: [App]
+    info:
+      path: App/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.local.SmartTagDiagnostic
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - package: SmartTagCore
+  SmartTagDiagnosticTests:
+    type: bundle.unit-testing
+    platform: iOS
+    sources: [Tests/AppTests]
+    dependencies:
+      - target: SmartTagDiagnostic
+      - package: SmartTagCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.local.SmartTagDiagnostic.Tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SmartTagDiagnostic.app/SmartTagDiagnostic"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+  SmartTagDiagnosticUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Tests/UITests]
+    dependencies:
+      - target: SmartTagDiagnostic
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.local.SmartTagDiagnostic.UITests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  SmartTagDiagnostic:
+    build:
+      targets:
+        SmartTagDiagnostic: all
+    test:
+      targets: [SmartTagDiagnosticTests, SmartTagDiagnosticUITests]

@@ -1,0 +1,59 @@
+name: iOS diagnostic build
+on:
+  workflow_dispatch:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: xcodebuild -version && swift --version
+      - name: Install generator
+        run: brew install xcodegen
+      - name: Validate configuration
+        run: |
+          python3 -m unittest discover -s scripts -p test_verify_project.py
+          python3 scripts/verify_project.py
+      - name: Test core
+        run: swift test
+      - name: Generate project
+        run: xcodegen generate
+      - name: Select installed iPhone simulator
+        run: |
+          xcrun simctl list devices available -j > /tmp/devices.json
+          python3 - <<'PY'
+          import json, os
+          data=json.load(open('/tmp/devices.json'))
+          devices=[d for runtime, items in data['devices'].items() if 'iOS' in runtime for d in items if d['isAvailable'] and d['name'].startswith('iPhone')]
+          if not devices: raise SystemExit('No available iPhone simulator')
+          with open(os.environ['GITHUB_ENV'], 'a') as out: out.write('SIMULATOR_ID='+devices[0]['udid']+'\n')
+          PY
+      - name: Build and test simulator app
+        run: |
+          xcodebuild test -project SmartTagDiagnostic.xcodeproj -scheme SmartTagDiagnostic -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -resultBundlePath build/UITests.xcresult CODE_SIGNING_ALLOWED=NO
+      - name: Archive unsigned app
+        run: |
+          xcodebuild archive -project SmartTagDiagnostic.xcodeproj -scheme SmartTagDiagnostic -destination 'generic/platform=iOS' -archivePath build/SmartTagDiagnostic.xcarchive CODE_SIGNING_ALLOWED=NO
+          mkdir -p build/package/Payload
+          ditto build/SmartTagDiagnostic.xcarchive/Products/Applications/SmartTagDiagnostic.app build/package/Payload/SmartTagDiagnostic.app
+          cd build/package
+          ditto -c -k --sequesterRsrc --keepParent Payload ../SmartTagDiagnostic-unsigned.ipa
+      - name: Upload unsigned application
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartTagDiagnostic-unsigned-needs-signing
+          path: build/SmartTagDiagnostic-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload simulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulator-test-results
+          path: build/UITests.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

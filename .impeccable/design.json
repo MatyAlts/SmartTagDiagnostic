@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 2,
+  "title": "Design System: SmartTag Diagnostic",
+  "extensions": {
+    "native": {
+      "platform": "ios",
+      "framework": "SwiftUI",
+      "operatingMode": "owner-operated experimental diagnostic",
+      "direction": "native-conventional",
+      "source": "App/UI/DiagnosticView.swift",
+      "semanticTokens": {
+        "background": "system inset grouped List background",
+        "foreground": "system label and secondary foregroundStyle",
+        "tint": "SwiftUI .blue",
+        "error": "SwiftUI .red",
+        "typography": "system San Francisco via default SwiftUI text styles and .caption"
+      },
+      "components": ["NavigationStack", "List.insetGrouped", "Button", "Label", "ProgressView", "NavigationLink", "LabeledContent", "SF Symbols"],
+      "minimumTouchTarget": {"widthPt": 44, "heightPt": 44, "status": "intent; not measured"},
+      "accessibilityIdentifiers": [{"value": "batteryResult", "element": "battery LabeledContent"}],
+      "verification": {
+        "sourceInspection": "completed",
+        "nativeBuild": "pending",
+        "simulatorScreenshots": "pending; unavailable on Windows",
+        "lightDark": "pending",
+        "largeDynamicType": "pending",
+        "contrast": "pending",
+        "touchTargets": "pending",
+        "voiceOver": "pending",
+        "reduceMotion": "pending",
+        "hardwareBluetooth": "pending"
+      }
+    }
+  }
+}
