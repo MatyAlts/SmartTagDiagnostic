@@ -48,6 +48,8 @@ struct NearbyTag: Identifiable {
     private enum UWBWrite: Equatable { case start, configuration, stop }
     private var pendingUWBWrite: UWBWrite?
     private var queuedStop = false
+    private var connectionLifecycle = BLEConnectionLifecycle()
+    private var attemptDelegate: BLEAttemptDelegate?
 
     override init() {
         super.init()
@@ -77,6 +79,10 @@ struct NearbyTag: Identifiable {
     }
 
     func connect(candidateID: UUID, credentials: TagCredentials, forUWB: Bool = false) {
+        guard connectionLifecycle.state == .idle else {
+            log("La conexión anterior todavía se está cerrando; esperá antes de reintentar.")
+            return
+        }
         guard peripheral == nil, let candidate = found[candidateID], let central, central.state == .poweredOn else {
             fail("Seleccioná una etiqueta detectada con Bluetooth disponible."); return
         }
@@ -87,7 +93,10 @@ struct NearbyTag: Identifiable {
         guard SecRandomCopyBytes(kSecRandomDefault, random.count, &random) == errSecSuccess else {
             fail("No se pudieron generar datos aleatorios seguros."); return
         }
-        phoneNonce = Data(random); peripheral = candidate; candidate.delegate = self
+        guard let generation = connectionLifecycle.beginConnection() else { return }
+        phoneNonce = Data(random); peripheral = candidate
+        let delegate = BLEAttemptDelegate(owner: self, generation: generation)
+        attemptDelegate = delegate; candidate.delegate = delegate
         isBusy = true; phase = "Conectando"; central.connect(candidate)
         armTimeout(); log("Conectando con el dispositivo seleccionado.")
     }
@@ -98,10 +107,48 @@ struct NearbyTag: Identifiable {
     }
 
     private func finishDisconnect() {
+        if connectionLifecycle.state == .disconnecting { return }
         pendingScan = false; central?.stopScan(); timeout?.cancel()
-        if let peripheral { central?.cancelPeripheralConnection(peripheral) }
-        peripheral?.delegate = nil; peripheral = nil; credentials = nil
-        resetHandshake(); authentication.cancel(); isBusy = false; phase = "Desconectado"
+        guard let peripheral, let generation = connectionLifecycle.currentGeneration else {
+            credentials = nil; resetHandshake(); authentication.cancel()
+            isBusy = false; phase = "Desconectado"; return
+        }
+        guard connectionLifecycle.beginDisconnect(generation: generation) else { return }
+        // Keep the peripheral and cancellation barrier, but wipe session secrets now.
+        credentials = nil; resetHandshake(); authentication.cancel()
+        isBusy = true; phase = "Cerrando la conexión Bluetooth"
+        central?.cancelPeripheralConnection(peripheral)
+        armDisconnectTimeout(generation: generation)
+    }
+
+    private func completeDisconnect(generation: UInt64, retiredManager: Bool = false) {
+        guard connectionLifecycle.didDisconnect(generation: generation) else { return }
+        timeout?.cancel(); peripheral?.delegate = nil; attemptDelegate = nil
+        peripheral = nil; credentials = nil; resetHandshake(); authentication.cancel()
+        isBusy = false
+        phase = errorMessage == nil ? "Conexión cerrada; podés volver a intentar" : "Detenido"
+        if !retiredManager {
+            log("CoreBluetooth confirmó el cierre. La selección cercana se conserva para reintentar.")
+        }
+    }
+
+    private func armDisconnectTimeout(generation: UInt64) {
+        timeout = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
+            guard let self, self.connectionLifecycle.currentGeneration == generation,
+                  self.connectionLifecycle.state == .disconnecting else { return }
+            // A fresh manager prevents late central callbacks from reaching a retry.
+            self.central?.delegate = nil; self.central = nil
+            self.found = [:]; self.candidates = []
+            self.completeDisconnect(generation: generation, retiredManager: true)
+            self.errorMessage = "Bluetooth no confirmó el cierre. Volvé a buscar dispositivos cercanos."
+            self.phase = "Se reinició la conexión Bluetooth"
+            self.log("Se retiró la conexión anterior por falta de confirmación de cierre; hace falta una nueva búsqueda.")
+        }
+    }
+
+    fileprivate func acceptsPeripheralCallback(_ peripheral: CBPeripheral, generation: UInt64) -> Bool {
+        self.peripheral === peripheral && connectionLifecycle.acceptsCallback(generation: generation)
     }
 
     func clear() {
@@ -280,8 +327,45 @@ struct NearbyTag: Identifiable {
     }
 }
 
+/// CoreBluetooth can reuse the same peripheral instance on the next connection.
+/// Each delegate captures its attempt token rather than using object identity alone.
+@MainActor private final class BLEAttemptDelegate: NSObject, CBPeripheralDelegate {
+    private weak var owner: TagBluetoothClient?
+    private let generation: UInt64
+
+    init(owner: TagBluetoothClient, generation: UInt64) {
+        self.owner = owner; self.generation = generation
+    }
+
+    private func currentOwner(_ peripheral: CBPeripheral) -> TagBluetoothClient? {
+        guard let owner, owner.acceptsPeripheralCallback(peripheral, generation: generation) else { return nil }
+        return owner
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        currentOwner(peripheral)?.peripheral(peripheral, didDiscoverServices: error)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        currentOwner(peripheral)?.peripheral(peripheral, didDiscoverCharacteristicsFor: service, error: error)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        currentOwner(peripheral)?.peripheral(peripheral, didUpdateNotificationStateFor: characteristic, error: error)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        currentOwner(peripheral)?.peripheral(peripheral, didWriteValueFor: characteristic, error: error)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        currentOwner(peripheral)?.peripheral(peripheral, didUpdateValueFor: characteristic, error: error)
+    }
+}
+
 extension TagBluetoothClient: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        guard self.central === central else { return }
         if pendingScan {
             if central.state == .unknown || central.state == .resetting { return }
             pendingScan = false; isBusy = false; timeout?.cancel()
@@ -293,7 +377,7 @@ extension TagBluetoothClient: CBCentralManagerDelegate {
     }
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        guard self.peripheral == nil else { return }
+        guard self.central === central, self.peripheral == nil else { return }
         let services = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []
         let manufacturer = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data
         let samsung = manufacturer.map { $0.count >= 2 && $0.prefix(2) == Data([0x75,0]) } ?? false
@@ -307,17 +391,27 @@ extension TagBluetoothClient: CBCentralManagerDelegate {
         candidates.removeAll { $0.id == candidate.id }; candidates.append(candidate)
     }
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        guard self.peripheral === peripheral else { return }
+        guard self.central === central, self.peripheral === peripheral,
+              let generation = connectionLifecycle.currentGeneration else { return }
+        guard connectionLifecycle.didConnect(generation: generation) else {
+            if connectionLifecycle.state == .disconnecting { central.cancelPeripheralConnection(peripheral) }
+            return
+        }
         phase = "Buscando servicios"; peripheral.discoverServices([Self.encryption, Self.service]); armTimeout()
     }
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        guard self.peripheral === peripheral else { return }; fail("No se pudo conectar con la etiqueta.")
+        guard self.central === central, self.peripheral === peripheral,
+              let generation = connectionLifecycle.currentGeneration else { return }
+        let closing = connectionLifecycle.state == .disconnecting
+        if !closing { errorMessage = "No se pudo conectar con la etiqueta."; log("No se pudo conectar con la etiqueta.") }
+        completeDisconnect(generation: generation)
     }
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        guard self.peripheral === peripheral else { return }
-        let stopping = uwbFlow.state == .stopping
-        finishDisconnect()
-        if !stopping { errorMessage = "La etiqueta se desconectó."; phase = "Detenido"; log("La etiqueta se desconectó.") }
+        guard self.central === central, self.peripheral === peripheral,
+              let generation = connectionLifecycle.currentGeneration else { return }
+        let closing = connectionLifecycle.state == .disconnecting || uwbFlow.state == .stopping
+        if !closing { errorMessage = "La etiqueta se desconectó."; log("La etiqueta se desconectó.") }
+        completeDisconnect(generation: generation)
     }
 }
 

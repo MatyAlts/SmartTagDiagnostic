@@ -49,3 +49,22 @@ little-endian outgoing counter before the payload. The counter begins at 1 and
 is independent of incoming battery response counters. Writes must be serialized.
 Incoming DEE30009 notifications are not interpreted as an Apple blob, status
 success or distance; their unexplained contents must not enter diagnostics.
+
+## Retrying after a trial
+
+Requesting a Bluetooth cancellation does not mean the native connection is closed.
+The adapter now keeps its selected peripheral and remains busy until CoreBluetooth
+reports disconnect or connection failure. Only then can another attempt reuse that
+candidate without a manual scan. Each attempt creates a delegate with a generation
+token; callbacks from an older delegate cannot advance the new handshake. All five
+implemented peripheral callbacks pass through that gate. Central-manager callbacks
+have no attempt token: their guards use the closing barrier and manager identity.
+
+Keys, nonces, counters and the discovered-characteristic map are cleared when close
+is requested. A retry discovers characteristics again and waits for notification
+subscription acknowledgements again; it does not infer readiness from a cached
+isNotifying value. The cause of any firmware-specific subscription behavior remains
+unproven. If closure is not acknowledged within five seconds, the old manager is
+retired, candidates are cleared and the app explicitly asks for a new nearby scan.
+The retry policy has deterministic lifecycle tests; repeated real-device attempts
+still require owner validation.
