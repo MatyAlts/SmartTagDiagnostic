@@ -1,9 +1,26 @@
 import XCTest
 import SmartTagCore
+import NearbyInteraction
 @testable import SmartTagDiagnostic
 
 @MainActor
 final class NearbyInteractionClientTests: XCTestCase {
+    func testRemovalReasonsAndSessionPhasesAreDistinctAndSafe() {
+        XCTAssertTrue(NearbyInteractionClient.removalDescription(.timeout).contains("timeout"))
+        XCTAssertTrue(NearbyInteractionClient.removalDescription(.peerEnded).contains("peerEnded"))
+        XCTAssertNotEqual(NearbyInteractionClient.removalDescription(.timeout),
+                          NearbyInteractionClient.removalDescription(.peerEnded))
+        let error = NSError(domain: "secret", code: -5887,
+                            userInfo: [NSLocalizedDescriptionKey: "SECRET-RAW-CONFIG"])
+        let message = NearbyInteractionClient.invalidationDescription(error, configurationSent: true)
+        XCTAssertTrue(message.contains("-5887"))
+        XCTAssertTrue(message.contains("después del envío"))
+        XCTAssertFalse(message.contains("SECRET"))
+        XCTAssertFalse(message.contains("secret"))
+        XCTAssertTrue(NearbyInteractionClient.invalidationDescription(error, configurationSent: false)
+            .contains("antes del envío"))
+    }
+
     func testUnsupportedDeviceRejectsBothProfilesWithoutSendingOrDistance() {
         for version in [AppleUWBVersion.v1, .v2] {
             let client = NearbyInteractionClient(capabilityOverride: false)
