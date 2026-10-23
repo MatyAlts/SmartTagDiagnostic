@@ -5,6 +5,27 @@ import NearbyInteraction
 
 @MainActor
 final class NearbyInteractionClientTests: XCTestCase {
+    func testTransportAcknowledgementWithoutCurrentNISessionCannotStartMeasurements() {
+        let client = NearbyInteractionClient(capabilityOverride: false)
+        XCTAssertNil(client.attemptID)
+        XCTAssertFalse(client.configurationAcknowledged(attemptID: UUID()))
+        XCTAssertFalse(client.isRunning)
+        XCTAssertNil(client.distanceMeters)
+        client.stop()
+        XCTAssertFalse(client.configurationAcknowledged(attemptID: UUID()))
+    }
+
+    func testAddressModeLabelsDescribeAnExperimentWithoutClaimingACompatibilityFix() {
+        let modes: [SamsungUWBAddressMode] = [.baseline, .accessoryLittleEndian, .phoneLittleEndian, .bothLittleEndian]
+        let labels = modes.map(NearbyInteractionClient.addressModeDescription)
+        XCTAssertEqual(Set(labels).count, 4)
+        XCTAssertTrue(labels[0].contains("Base"))
+        XCTAssertTrue(labels[1].contains("etiqueta"))
+        XCTAssertTrue(labels[2].contains("iPhone"))
+        XCTAssertTrue(labels[3].contains("Ambas"))
+        XCTAssertFalse(labels.joined().lowercased().contains("corregid"))
+    }
+
     func testRemovalReasonsAndSessionPhasesAreDistinctAndSafe() {
         XCTAssertTrue(NearbyInteractionClient.removalDescription(.timeout).contains("timeout"))
         XCTAssertTrue(NearbyInteractionClient.removalDescription(.peerEnded).contains("peerEnded"))
