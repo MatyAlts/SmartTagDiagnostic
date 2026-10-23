@@ -1,0 +1,34 @@
+# Samsung account diagnostic flow
+
+This is a source-derived experimental client, not a registered Samsung iOS integration. No login, token exchange, metadata retrieval or Bluetooth operation has been run by the authors in this environment. Server policy can reject the borrowed public client identifiers or Windows callback on iOS. A successful build does not establish account interoperability.
+
+The owner taps the login button. The app requests Samsung's ANDROIDSDK entry point, makes fresh state/PKCE values, constructs the encrypted `svcParam`, and opens an ephemeral `ASWebAuthenticationSession`. Passwords are entered only on Samsung's browser page. The callback uses `ms-app://s-1-15-2-4027708247-2189610-1983755848-2937435718-1578786913-2158692839-1974417358`. Do not substitute a random redirect and assume Samsung will accept it. The public login client ID comes from Samsung Account for Windows; the `iot.client` ID comes from Android SmartThings as documented by uTag.
+
+The envelope follows RSA/PKCS1 wrapping of a Base64-encoded 128-bit AES key, AES-CBC/PKCS7 for the service parameters, and the original PBKDF2 construction. Callback fields use the original AES-ECB/PKCS7 decryption: state unwraps a server response key, which unwraps `auth_server_url`, `code` and `retValue`. This inherited scheme provides no modern authenticated-encryption envelope; interoperability and adversarial callback behavior need device-side validation. The callback origin is exact, duplicate fields fail, values are bounded, each browser attempt expires after ten minutes and is consumed before token exchange. The state is not compared as plaintext because the upstream protocol encrypts a response key into that field.
+
+The client exchanges the PKCE authorization code at `/auth/oauth2/authenticate`, requests `iot.client` authorization, then exchanges the resulting code at `/auth/oauth2/token`. It does not request Samsung Find `offline.access`. Only a successful token response produces a signed-in state. An HTTP 401 triggers one refresh and one retry, without infinite retries. Auth server origins require HTTPS and the exact `samsung.com` domain boundary, no credentials, custom port, query or path. The ephemeral HTTP session rejects redirects entirely so neither form bodies nor bearer tokens follow another origin. A future narrowing to observed regional auth hosts is preferable once a legitimate callback is captured.
+
+Access/refresh tokens and a random stable client device identity use the device-only, unlocked Keychain. Tag secrets are held in memory with the account-listed device objects, never UserDefaults, logs, GitHub secrets or build artifacts. Sign out clears the local session and in-memory device list; it is not a Samsung server revocation. No raw HTTP error bodies or NSError URL descriptions are shown.
+
+Device reads use `https://client.smartthings.com/devices?includeAllowedActions=true`, V7 Accept header, owner session bearer, all same-origin pagination, and detail reads only for listed BLE tags. Server authorization remains authoritative. Fields are `bleD2D.encryptionKey`, `bleD2D.cipher` and optional `advertisingId`. Metadata absence is an explicit blocker. The observed key normalization is Base64URL when advertisingId is absent; hex when present; take the first 16 decoded bytes. Unsupported cipher values fail in the BLE core rather than being guessed. The app never asks the user to paste account tokens or tag keys.
+
+## Verification pending
+
+The auth request headers reproduce the OSP header names and Android user-agent template from [OspInterceptor](https://github.com/KieronQuinn/uTag/blob/f46375a9c2af6de4c8678f6aba7b91972054ae74/app/src/main/java/com/kieronquinn/app/utag/networking/interceptors/OspInterceptor.kt), with a fixed Android SDK 35 compatibility profile, the inspected APK version 1.8.52.23 and an iPhone model label. This is not evidence of an officially registered iOS client. Header/server acceptance must be observed. The conservative callback auth-server policy currently accepts only `samsung.com` and its subdomains; a regional host under another domain is intentionally blocked until its ownership and role are verified. Do not remove this check to work around a login error.
+
+Generation invalidation on sign out blocks in-flight HTTP responses from restoring sessions, writing the Keychain or repopulating devices. Old attempts cannot clear a newer browser or overwrite its status. Native execution must still exercise sign-out races and cancellation. UI-testing mode bypasses Keychain restoration/deletion and all network requests; it does not simulate a successful login.
+
+XCTest source was written before implementation. `swift test`, Xcode build, real callback acceptance, Keychain behavior and live account/device tests are pending macOS/iPhone; Windows has no Swift/Xcode. Core tests cover the published PKCE vector, strict server origins, callback mismatch/duplicates, both metadata key variants and pagination token-leak prevention. App bridge crypto needs executable known-answer tests and native integration checks before treating this as production software. No credentials should be placed in CI. A tag may return no advertising identity, preventing safe CoreBluetooth matching; do not fall back to the first nearby tag.
+
+## Sources
+
+All Android references below are pinned to uTag revision `f46375a9c2af6de4c8678f6aba7b91972054ae74`; this implementation is a Swift re-expression of the observed flow, not copied Kotlin source.
+
+- [SignInUtils](https://github.com/KieronQuinn/uTag/blob/f46375a9c2af6de4c8678f6aba7b91972054ae74/app/src/main/java/com/kieronquinn/app/utag/utils/SignInUtils.kt): envelope, PKCE and callback cipher.
+- [AuthRepository](https://github.com/KieronQuinn/uTag/blob/f46375a9c2af6de4c8678f6aba7b91972054ae74/app/src/main/java/com/kieronquinn/app/utag/repositories/AuthRepository.kt): exchange/refresh and `iot.client` scope.
+- [AuthService](https://github.com/KieronQuinn/uTag/blob/f46375a9c2af6de4c8678f6aba7b91972054ae74/app/src/main/java/com/kieronquinn/app/utag/networking/services/AuthService.kt): exact request parameters.
+- [AuthResponseViewModel](https://github.com/KieronQuinn/uTag/blob/f46375a9c2af6de4c8678f6aba7b91972054ae74/app/src/main/java/com/kieronquinn/app/utag/ui/screens/login/AuthResponseViewModel.kt): encrypted return-field order.
+- [values.xml](https://github.com/KieronQuinn/uTag/blob/f46375a9c2af6de4c8678f6aba7b91972054ae74/app/src/main/res/values/values.xml): Windows callback URI.
+- [Application.kt](https://github.com/KieronQuinn/uTag/blob/f46375a9c2af6de4c8678f6aba7b91972054ae74/app/src/main/java/com/kieronquinn/app/utag/Application.kt): public client ID provenance.
+
+The V7 endpoint and metadata paths were established in the supplied local APK investigation; no response for the owner's actual account has yet been observed. The exact live cipher and key variant remain unverified.
