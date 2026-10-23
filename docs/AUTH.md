@@ -10,6 +10,8 @@ The client exchanges the PKCE authorization code at `/auth/oauth2/authenticate`,
 
 Access/refresh tokens and a random stable client device identity use the device-only, unlocked Keychain. Tag secrets are held in memory with the account-listed device objects, never UserDefaults, logs, GitHub secrets or build artifacts. Sign out clears the local session and in-memory device list; it is not a Samsung server revocation. No raw HTTP error bodies or NSError URL descriptions are shown.
 
+Rejected server diagnostics identify a fixed stage: browser entry (`signInURI`), browser return (`auth_server_url`), or device pagination. They display only a conservative ASCII DNS hostname, lowercased; malformed, Unicode/punycode or invalid DNS authorities display `no disponible`. Userinfo, path, query and fragment are never copied into the message. This is evidence collection for interoperability: no additional server domain is trusted. When reporting the rejection, share only this app message, never the browser return URL.
+
 Device reads use `https://client.smartthings.com/devices?includeAllowedActions=true`, V7 Accept header, owner session bearer, all same-origin pagination, and detail reads only for listed BLE tags. Server authorization remains authoritative. Fields are `bleD2D.encryptionKey`, `bleD2D.cipher` and optional `advertisingId`. Metadata absence is an explicit blocker. The observed key normalization is Base64URL when advertisingId is absent; hex when present; take the first 16 decoded bytes. Unsupported cipher values fail in the BLE core rather than being guessed. The app never asks the user to paste account tokens or tag keys.
 
 ## Verification pending

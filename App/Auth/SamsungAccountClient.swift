@@ -197,10 +197,12 @@ final class SamsungAccountClient: NSObject, ObservableObject, ASWebAuthenticatio
     }
     private func loginURL(entry: [String:Any], state: String, verifier: String, device: String) throws -> URL {
         let signIn = try required(entry,"signInURI")
-        guard let endpoint = URLComponents(string: signIn), let host = endpoint.host else { throw AccountError.unsafeURL }
-        _ = try SamsungAuth.server("https://" + host)
+        let rejection = SamsungAuth.rejectedURL(signIn, stage: .entrySignIn)
+        guard let endpoint = URLComponents(string: signIn), let host = endpoint.host else { throw rejection }
+        do { _ = try SamsungAuth.server("https://" + host, stage: .entrySignIn) }
+        catch { throw rejection }
         guard endpoint.scheme == "https", endpoint.user == nil, endpoint.password == nil, endpoint.port == nil,
-              let publicKey = Data(base64Encoded: try required(entry,"pkiPublicKey")) else { throw AccountError.unsafeURL }
+              let publicKey = Data(base64Encoded: try required(entry,"pkiPublicKey")) else { throw rejection }
         let check = try required(entry,"chkDoNum")
         guard let count = Int(check), count > 0, count <= 1_000_000 else { throw AccountError.invalidResponse }
         // PBKDF2 construction matches SignInUtils; salt is random for each request.

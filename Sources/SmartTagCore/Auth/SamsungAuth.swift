@@ -1,12 +1,20 @@
 import Foundation
 import CryptoKit
 
+public enum AccountURLStage: String {
+    case callbackServer = "retorno de Samsung (auth_server_url)"
+    case entrySignIn = "apertura de Samsung (signInURI)"
+    case pagination = "listado de etiquetas (paginación)"
+}
+
 public enum AccountError: Error, LocalizedError {
     case invalidResponse, unsafeURL, callback, missingMetadata, http(Int), cancelled, keyStorage
+    case rejectedURL(AccountURLStage, String)
     public var errorDescription: String? {
         switch self {
         case .invalidResponse: return "Respuesta de Samsung incompatible o incompleta."
         case .unsafeURL: return "Se rechazó una dirección de servidor inesperada."
+        case .rejectedURL(let stage, let host): return "Se rechazó una dirección de servidor inesperada. Etapa: \(stage.rawValue). Servidor: \(host)."
         case .callback: return "El retorno de Samsung no coincide con el intento de inicio de sesión."
         case .missingMetadata: return "Samsung no entregó encryptionKey/cipher válidos para esta etiqueta."
         case .http(let code): return "Samsung respondió HTTP \(code). La sesión o el cliente pueden no estar autorizados."
@@ -24,12 +32,32 @@ public enum SamsungAuth {
     public static func challenge(_ verifier: String) -> String {
         Data(SHA256.hash(data: Data(verifier.utf8))).base64URLEncoded
     }
-    public static func server(_ text: String) throws -> URL {
+    // Only a conservative ASCII DNS authority may enter diagnostics. Never echo raw URLs.
+    public static func rejectedURL(_ text: String, stage: AccountURLStage) -> AccountError {
+        let value = text.contains("://") ? text : "https://" + text
+        var hostname = "no disponible"
+        if let separator = value.range(of: "://") {
+            let authority = value[separator.upperBound...].prefix { !"/?#".contains($0) }
+            if authority.unicodeScalars.allSatisfy({ $0.value > 32 && $0.value < 127 }),
+               let components = URLComponents(string: value), let host = components.host?.lowercased(),
+               host.utf8.count <= 253 {
+                let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+                let valid = !labels.isEmpty && labels.allSatisfy { label in
+                    !label.isEmpty && label.utf8.count <= 63 && !label.hasPrefix("xn--") &&
+                    label.first != "-" && label.last != "-" &&
+                    label.utf8.allSatisfy { (97...122).contains($0) || (48...57).contains($0) || $0 == 45 }
+                }
+                if valid { hostname = host }
+            }
+        }
+        return .rejectedURL(stage, hostname)
+    }
+    public static func server(_ text: String, stage: AccountURLStage = .callbackServer) throws -> URL {
         let value = text.contains("://") ? text : "https://" + text
         guard let u = URLComponents(string: value), u.scheme == "https", let host = u.host?.lowercased(),
               host == "samsung.com" || host.hasSuffix(".samsung.com"),
               u.user == nil, u.password == nil, u.port == nil, u.query == nil, u.fragment == nil,
-              u.path.isEmpty || u.path == "/", let url = u.url else { throw AccountError.unsafeURL }
+              u.path.isEmpty || u.path == "/", let url = u.url else { throw rejectedURL(text, stage: stage) }
         return url
     }
     public static func callbackFields(_ url: URL) throws -> [String: String] {
@@ -47,13 +75,14 @@ public enum SamsungAuth {
         return result
     }
     public static func page(_ href: String, relativeTo base: URL) throws -> URL {
+        let rejection = rejectedURL(URL(string: href, relativeTo: base)?.absoluteURL.absoluteString ?? "", stage: .pagination)
         guard let url = URL(string: href, relativeTo: base)?.absoluteURL,
               var c = URLComponents(url: url, resolvingAgainstBaseURL: false), c.scheme == "https",
               c.host == "client.smartthings.com", c.port == nil, c.user == nil, c.password == nil,
-              c.fragment == nil, c.path == "/devices" else { throw AccountError.unsafeURL }
+              c.fragment == nil, c.path == "/devices" else { throw rejection }
         var items = (c.queryItems ?? []).filter { $0.name != "includeAllowedActions" }
         items.append(URLQueryItem(name: "includeAllowedActions", value: "true")); c.queryItems = items
-        guard let result = c.url else { throw AccountError.unsafeURL }; return result
+        guard let result = c.url else { throw rejection }; return result
     }
     public static func form(_ fields: [String:String]) -> Data {
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
