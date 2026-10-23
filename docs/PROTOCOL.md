@@ -1,6 +1,6 @@
 # Bluetooth diagnostic protocol
 
-This implementation is a source-derived hypothesis, not a hardware-validated port. Native XCTest runs in the macOS GitHub Actions workflow. The first real tag connection remains pending. It does not activate UWB, ring, reset, rebind or write tag settings.
+This document records the original battery-only protocol baseline. The owner has since observed authenticated battery reads on Cleo. The current app also includes experimental UWB and authenticated ringing; see [current experiments and sound controls](UWB-EXPERIMENT.md). UWB ranging and audible ringing still require physical validation. Native XCTest runs in the macOS GitHub Actions workflow. Reset, rebind and volume changes are outside this implementation.
 
 The supplied SmartThings APK analysis found encryption service `eedd5e73-6aa8-4673-8219-398a489da87c`, nonce characteristic `a12be31c-5b38-4773-9b9d-3d5735233a7c`, and encrypted proof characteristic `4ebe81f6-b952-465e-9ece-5ca39d4e8955`. These identifiers and the key derivation need hardware confirmation. The master secret is the authorized owner's normalized 16-byte `bleD2D.encryptionKey`. Accepted cipher descriptors are `AES/CBC/PKCS5Padding`, `AES/CBC/PKCS7Padding`, `AES-CBC-PKCS5Padding`, `AES-CBC-PKCS7Padding`, `AES_128-CBC-PKCS5Padding` and `AES_128-CBC-PKCS7Padding`, matched case-insensitively. Each stores the explicit canonical transform `AES/CBC/PKCS7Padding`; Java PKCS5Padding for AES is interoperable with CommonCrypto PKCS7 padding. Other modes, key sizes and malformed descriptors fail closed.
 
