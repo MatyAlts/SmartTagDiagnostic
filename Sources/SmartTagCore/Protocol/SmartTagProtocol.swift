@@ -25,11 +25,16 @@ public struct TagCredentials {
     public let advertisingID: String?
     public init(deviceID: String, masterSecret: Data, cipher: String, advertisingID: String? = nil) throws {
         guard !deviceID.isEmpty, masterSecret.count == 16 else { throw TagProtocolError.invalidCredentials }
-        guard ["AES/CBC/PKCS5PADDING", "AES/CBC/PKCS7PADDING"].contains(cipher.uppercased()) else {
+        let supportedDescriptors = [
+            "AES/CBC/PKCS5PADDING", "AES/CBC/PKCS7PADDING",
+            "AES-CBC-PKCS5PADDING", "AES-CBC-PKCS7PADDING",
+            "AES_128-CBC-PKCS5PADDING", "AES_128-CBC-PKCS7PADDING"
+        ]
+        guard supportedDescriptors.contains(cipher.uppercased()) else {
             throw TagProtocolError.unsupportedCipher
         }
         self.deviceID = deviceID; self.masterSecret = masterSecret
-        self.cipher = cipher; self.advertisingID = advertisingID
+        self.cipher = "AES/CBC/PKCS7Padding"; self.advertisingID = advertisingID
     }
 }
 
