@@ -68,3 +68,48 @@ unproven. If closure is not acknowledged within five seconds, the old manager is
 retired, candidates are cleared and the app explicitly asks for a new nearby scan.
 The retry policy has deterministic lifecycle tests; repeated real-device attempts
 still require owner validation.
+
+## Response comparison and Samsung consumers (T11)
+
+The owner observed a decrypted, frame-valid 35-byte DEE30009 payload. Its length
+matches the configuration length; this alone establishes neither an echo nor
+radio acceptance. The diagnostic compares that payload locally with the exact
+35-byte plaintext configuration handed to the characteristic writer during the
+same attempt. Only match/different/unavailable is exposed. A match means byte
+equality, not that ranging started or that Apple Nearby Interaction is compatible.
+No raw payload, configuration, key or nonce belongs in the diagnostic output.
+
+The bounded APK follow-up used offline DEX decoding because the REA JADX provider
+was unavailable. Evidence below is from the supplied APK's `classes8.dex`, SHA256
+`582aa601197129d9489b0db9d55c493603e9544c17b7910d10d926a3aa693623`, except
+the explicitly identified `classes9.dex` Binder path. Offsets after a code-item
+address are instruction byte offsets within that method.
+
+- `lg0.c.<clinit>`, code item `0x62a010`, loads the DEE30009 UUID at `+0xaa`
+  and stores it in `lg0.c.h` at `+0xbc`.
+- `GattActionManagerImpl.j`, `0x4b8bb0`, maps that UUID to `UWB_PARAMETER`
+  at `+0x16c`–`+0x17c`. For this event and DEBUG, the wrapper parses the first
+  two payload hex characters with `Integer.parseInt(String)` (decimal text,
+  no radix argument), retaining the rest as `extraValue`. This is wrapper
+  structure; no accepted/rejected status meaning was established.
+- The same method constructs `GattControlServiceState` at `+0x282` and dispatches
+  registered listeners at `+0x294`. `base.capability.g.accept`, `0x497288`,
+  discriminator 1, invokes `tag.gatt.j.a(state, invocationID)` at `+0x1cc`.
+- In `classes9.dex`, `smarttag.service.manager.f.a`, `0x3fc36c`, forwards the
+  state through `RemoteCallbackList` to `IGattCharacteristicChangedCallback.y1`
+  at `+0x32`. The Binder proxy `smarttag.service.b.y1`, `0x3f99c8`, parcels
+  it without interpreting UWB parameters.
+- The generic plugin notification callback
+  `QcPluginServiceBLECoreDeviceImpl$registerControlServiceNotificationListener$1.onControlServiceChanged`,
+  `0x558d20`, forwards `stateJson` to
+  `IPluginGattControlServiceNotificationListener` at `+0x2c`; its Binder proxy
+  at `0x592b5c` transmits that string. The eventual plugin consumer is unresolved.
+
+An instruction-aware search across all 11 APK DEX files found direct reads of
+the `UWB_PARAMETER` enum field only in its enum value list and the event factory.
+The inspected callback implementations supplied forwarding, logging and other
+feature handling, not recovered UWB session/status semantics. This search does
+not cover ordinal-based dispatch, reflection or separately delivered plugins.
+No actual response bytes were supplied for this research; echo contents,
+firmware acceptance and distance remain unproven. A real NI distance update
+remains the success condition.
