@@ -23,3 +23,9 @@ Generated data is decoded only for the documented version and exact length: 30 b
 The version 2 input is gated by runtime support: [iOS 26.1 release notes](https://developer.apple.com/documentation/ios-ipados-release-notes/ios-ipados-26_1-release-notes/) document additional accessory parameters including hopping. The integration uses the established `NINearbyAccessoryConfiguration(data:)` initializer rather than new SDK-only declarations.
 
 Only a current, matching Nearby Interaction object's finite, nonnegative `distance` may be displayed in meters. RSSI, configuration acceptance, sample vectors and a previous session's values are never substitutes. The foreground trial requires the Nearby Interaction privacy description; no fabricated `com.apple.developer.nearby-interaction` entitlement is added.
+# Reading a failed trial
+
+The technical screen keeps Bluetooth and Nearby Interaction events in separate sections; it does not claim one interleaved chronology. Known 1.1/2.0 configurations report their length, version and radio fields before strict validation. Failures distinguish Apple decoding from Samsung translation and name unsupported fields without logging their secret values. Unknown layouts report only length/version.
+
+NI removal reports `timeout`, `peerEnded` or an unknown reason. NI invalidation reports only the numeric error code and whether parameters had been handed to the Bluetooth transport. That handoff is not a GATT acknowledgement or evidence of radio compatibility. No payload, session identifier, address, STS IV, token or key is included. A failed trial never becomes a distance result.
+

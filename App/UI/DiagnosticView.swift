@@ -149,7 +149,7 @@ struct DiagnosticView: View {
                     Section("No se pudo completar") { Text(message).foregroundStyle(.red).accessibilityLabel("Error: \(message)") }
                 }
                 Section {
-                    NavigationLink("Registro técnico") { EventLogView(events: bluetooth.events + nearby.events) }
+                    NavigationLink("Registro técnico") { EventLogView(bluetoothEvents: bluetooth.events, nearbyEvents: nearby.events) }
                     NavigationLink("Acerca de la prueba") {
                         List {
                             Text("Diagnóstico experimental independiente. La aceptación del inicio de sesión en iOS y la interoperabilidad Bluetooth requieren pruebas reales.")
@@ -179,11 +179,21 @@ struct DiagnosticView: View {
 }
 
 private struct EventLogView: View {
-    let events: [String]
+    let bluetoothEvents: [String]
+    let nearbyEvents: [String]
     var body: some View {
         List {
-            if events.isEmpty { Text("Sin eventos").foregroundStyle(.secondary) }
-            ForEach(Array(events.enumerated()), id: \.offset) { _, event in Text(event) }
+            if bluetoothEvents.isEmpty && nearbyEvents.isEmpty { Text("Sin eventos").foregroundStyle(.secondary) }
+            if !bluetoothEvents.isEmpty {
+                Section("Bluetooth") {
+                    ForEach(Array(bluetoothEvents.enumerated()), id: \.offset) { _, event in Text(event) }
+                }
+            }
+            if !nearbyEvents.isEmpty {
+                Section("Nearby Interaction") {
+                    ForEach(Array(nearbyEvents.enumerated()), id: \.offset) { _, event in Text(event) }
+                }
+            }
         }.navigationTitle("Registro técnico").navigationBarTitleDisplayMode(.inline)
     }
 }

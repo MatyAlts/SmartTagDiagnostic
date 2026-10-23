@@ -119,23 +119,24 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
                  for object: NINearbyObject) {
         guard self.session === session, isRunning, object.discoveryToken == token,
               !sentConfiguration else { return }
-        let bytes = [UInt8](data)
-        var structure = "Configuración NI: \(bytes.count) bytes"
-        if bytes.count >= 4 {
-            let major = UInt16(bytes[0]) | UInt16(bytes[1]) << 8
-            let minor = UInt16(bytes[2]) | UInt16(bytes[3]) << 8
-            structure += ", versión \(major).\(minor)"
-        }
-        events.append(structure + ".")
+        events.append(contentsOf: UWBDiagnostics.shareableSummary(data))
+        let parameters: AppleUWBParameters
         do {
-            let parameters = try AppleUWBProtocol.decodeShareable(data)
-            events.append("Perfil NI: canal \(parameters.channel), preámbulo \(parameters.preamble), slots \(parameters.slots), duración \(parameters.slotDurationRSTU) RSTU, intervalo \(parameters.intervalMilliseconds) ms, control \(parameters.roundControl), hopping \(parameters.hopping).")
+            parameters = try AppleUWBProtocol.decodeShareable(data)
+        } catch {
+            fail(UWBDiagnostics.rejection(error, stage: .appleDecode))
+            return
+        }
+        do {
             let translated = try SamsungUWBProtocol.configuration(parameters: parameters, accessoryAddress: accessoryAddress)
             sentConfiguration = true
             phase = "Esperando medición UWB…"
+            events.append("Parámetros NI entregados al transporte Bluetooth; todavía no confirma recepción ni compatibilidad de radio.")
             sendConfiguration?(translated)
         } catch {
-            fail("La configuración generada por Nearby Interaction no coincide con el perfil experimental. Consultá el registro técnico.")
+            let fields = UWBDiagnostics.unsupportedSamsungFields(parameters, accessoryAddress: accessoryAddress)
+            if !fields.isEmpty { events.append("Campos fuera del perfil Samsung: " + fields.joined(separator: ", ") + ".") }
+            fail(UWBDiagnostics.rejection(error, stage: .samsungTranslation))
         }
     }
 
@@ -169,7 +170,7 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
     func session(_ session: NISession, didRemove nearbyObjects: [NINearbyObject],
                  reason: NINearbyObject.RemovalReason) {
         guard self.session === session, nearbyObjects.contains(where: { $0.discoveryToken == token }) else { return }
-        fail("Nearby Interaction perdió la etiqueta. Volvé a iniciar la prueba.")
+        fail(Self.removalDescription(reason) + " Etapa: " + Self.transportPhase(sentConfiguration) + ". Volvé a iniciar la prueba.")
     }
 
     func sessionWasSuspended(_ session: NISession) {
@@ -179,6 +180,22 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
 
     func session(_ session: NISession, didInvalidateWith error: Error) {
         guard self.session === session else { return }
-        fail("Nearby Interaction detuvo la sesión (código \((error as NSError).code)). Revisá el permiso y volvé a iniciar.")
+        fail(Self.invalidationDescription(error, configurationSent: sentConfiguration))
+    }
+
+    static func removalDescription(_ reason: NINearbyObject.RemovalReason) -> String {
+        switch reason {
+        case .timeout: return "Nearby Interaction retiró la etiqueta: timeout (se agotó el tiempo de la sesión)."
+        case .peerEnded: return "Nearby Interaction retiró la etiqueta: peerEnded (el extremo remoto terminó la sesión)."
+        @unknown default: return "Nearby Interaction retiró la etiqueta: motivo no reconocido."
+        }
+    }
+
+    static func invalidationDescription(_ error: Error, configurationSent: Bool) -> String {
+        "Nearby Interaction invalidó la sesión (código \((error as NSError).code)). Etapa: \(transportPhase(configurationSent)). Revisá el permiso y volvé a iniciar."
+    }
+
+    private static func transportPhase(_ sent: Bool) -> String {
+        sent ? "después del envío al transporte" : "antes del envío al transporte"
     }
 }
