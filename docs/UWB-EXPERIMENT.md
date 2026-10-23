@@ -115,3 +115,31 @@ establece una traducción universal para iOS. La investigación limitada al APK 
 recuperó la implementación UCI externa ni demostró otro cambio de radio correcto;
 este selector es un experimento documentado y no una solución confirmada.
 
+
+## Sonido autenticado de la etiqueta
+
+La prueba de sonido usa una conexión independiente de UWB. Autentica la etiqueta,
+lee la batería y prepara notificaciones antes de enviar START (`01`) o STOP (`00`)
+a la característica de sonido `DEE30001-182D-5496-B1AD-14F216324184`. Conserva el
+volumen actual: no lee ni escribe la configuración de volumen. Reutiliza el
+cifrado de sesión, contador saliente y secuencia de recepción de la batería.
+
+El plazo automático de cinco segundos empieza al entregar START a CoreBluetooth,
+no cuando llega su ACK. Cumplir ese plazo solicita STOP; no garantiza que el
+accesorio haya dejado de sonar. Si START sigue pendiente, espera hasta tres
+segundos para serializar STOP; luego concede tres segundos desde el envío de STOP
+para su confirmación. Un error en el ACK de START también intenta STOP, porque el
+comando puede haber llegado. Reintentos, temporizadores y callbacks quedan ligados
+a su conexión e intento; el cierre conserva su barrera y plazo de cinco segundos.
+
+El registro diferencia solicitud, confirmación Bluetooth y notificación válida de
+la etiqueta. Un ACK por sí solo no prueba sonido audible ni su cese. Si la etiqueta
+notifica OFF durante STOP, ese dato se conserva aunque falte el ACK; un ON posterior
+válido lo invalida. Las notificaciones no reemplazan ni confunden la escritura
+pendiente. Una pérdida inesperada de enlace se informa sin confirmar la parada.
+
+Los botones de sonido se excluyen con UWB y otras operaciones Bluetooth. Pasar a
+segundo plano, cerrar sesión o salir solicita la parada y limpieza. La fiabilidad
+del sonido y la parada real requieren probar el IPA con Cleo. La captura
+`ring-layout.png` muestra los controles nativos deshabilitados únicamente bajo
+`-ui-testing -ring-ui-testing`, sin cuenta ficticia, secretos ni actividad Bluetooth.

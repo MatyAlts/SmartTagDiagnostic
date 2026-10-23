@@ -45,6 +45,9 @@ jobs:
           xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" org.local.SmartTagDiagnostic -ui-testing
           sleep 3
           xcrun simctl io "$SIMULATOR_ID" screenshot build/iphone-layout.png
+          xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" org.local.SmartTagDiagnostic -ui-testing -ring-ui-testing
+          sleep 3
+          xcrun simctl io "$SIMULATOR_ID" screenshot build/ring-layout.png
       - name: Archive unsigned app
         run: |
           xcodebuild archive -project SmartTagDiagnostic.xcodeproj -scheme SmartTagDiagnostic -destination 'generic/platform=iOS' -archivePath build/SmartTagDiagnostic.xcarchive CODE_SIGNING_ALLOWED=NO
@@ -76,6 +79,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: iphone-layout
-          path: build/iphone-layout.png
+          path: |
+            build/iphone-layout.png
+            build/ring-layout.png
           if-no-files-found: ignore
           retention-days: 7

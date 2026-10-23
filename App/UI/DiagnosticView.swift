@@ -25,6 +25,28 @@ struct DiagnosticView: View {
         activeNIAttemptID = nil
         nearby.stop()
         bluetooth.stopUWB()
+        bluetooth.stopRing()
+    }
+
+    private var ringSection: some View {
+        Section {
+            Button("Hacer sonar (5 s)") {
+                guard let tag = selectedTag, let id = selectedCandidateID else { return }
+                localError = nil; nearby.clear()
+                do { bluetooth.startRing(candidateID: id, credentials: try tag.credentials()) }
+                catch { localError = "No se pudo preparar el sonido de la etiqueta." }
+            }
+            .disabled(testing || bluetooth.isBusy || nearby.isRunning || selectedCandidateID == nil || selectedTag?.metadataReady != true)
+            .accessibilityIdentifier("startRing")
+            Button("Detener sonido") { bluetooth.stopRing() }
+                .disabled(!bluetooth.ringCanStop)
+                .accessibilityIdentifier("stopRing")
+            Text(bluetooth.ringStatus).foregroundStyle(.secondary)
+        } header: {
+            Text("Sonido de la etiqueta")
+        } footer: {
+            Text("Conserva el volumen actual. La app solicita detener el sonido a los 5 segundos; una conexión interrumpida puede impedir confirmar la parada.")
+        }
     }
 
     private func metadataProblem(_ device: TagDevice) -> String {
@@ -115,6 +137,7 @@ struct DiagnosticView: View {
                         }
                         Button("Desconectar y limpiar") { nearby.clear(); bluetooth.clear(); selectedCandidateID = nil }
                     }
+                    ringSection
                     Section {
                         if #available(iOS 26.1, *) {
                             Picker("Perfil experimental", selection: $selectedUWBProfile) {
@@ -157,6 +180,10 @@ struct DiagnosticView: View {
                     } footer: {
                         Text("Mantené la app abierta. Solicitud hopping solo se puede cambiar con el perfil 2.0; Apple selecciona el resultado. Los ensayos no son correcciones verificadas. Detené la prueba antes de cambiar opciones. Solo se muestran metros recibidos de Nearby Interaction.")
                     }
+                }
+                if testing && ProcessInfo.processInfo.arguments.contains("-ring-ui-testing") && selectedTag == nil {
+                    // Render the real controls disabled, with no account fixture or BLE activity.
+                    ringSection
                 }
                 if let message = localError ?? account.errorMessage ?? bluetooth.errorMessage ?? nearby.errorMessage {
                     Section("No se pudo completar") { Text(message).foregroundStyle(.red).accessibilityLabel("Error: \(message)") }

@@ -18,3 +18,5 @@ Strict TDD ON from userAGENTS; swift test and xcodebuild test on macOS Actions (
 
 ## Progress
 Read-only delegated mapping completed /root/timer_close_audit. Baseline39970525344 running before tests/source. No implementation written yet; tracker and mirror precede source.
+
+- Baseline39970525344 core/simulator tests PASS before tests written (archive still in progress). Tests-only43b3a81:12App+1UI cases; extra policycase8 added before production verifies OFF evidence followed by fresh ON. NativeRED39971559228 missingRingTrialProgress at testsline9 observed before production; writer GO. Expected new13App+1UI →130native total. No physical sound claim.
