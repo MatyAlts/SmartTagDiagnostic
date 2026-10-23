@@ -55,7 +55,8 @@ public enum SamsungAuth {
     public static func server(_ text: String, stage: AccountURLStage = .callbackServer) throws -> URL {
         let value = text.contains("://") ? text : "https://" + text
         guard let u = URLComponents(string: value), u.scheme == "https", let host = u.host?.lowercased(),
-              host == "samsung.com" || host.hasSuffix(".samsung.com"),
+              host == "samsung.com" || host.hasSuffix(".samsung.com") ||
+                (stage == .callbackServer && host == "us-auth2.samsungosp.com"),
               u.user == nil, u.password == nil, u.port == nil, u.query == nil, u.fragment == nil,
               u.path.isEmpty || u.path == "/", let url = u.url else { throw rejectedURL(text, stage: stage) }
         return url
