@@ -11,6 +11,8 @@ struct DiagnosticView: View {
     @State private var selectedCandidateID: UUID?
     @State private var localError: String?
     @State private var selectedUWBProfile = 2
+    @State private var selectedAddressMode: SamsungUWBAddressMode = .baseline
+    @State private var activeNIAttemptID: UUID?
     private var selectedTag: TagDevice? { account.devices.first { $0.id == selectedTagID } }
     private var testing: Bool { ProcessInfo.processInfo.arguments.contains("-ui-testing") }
     private var uwbVersion: AppleUWBVersion {
@@ -19,6 +21,7 @@ struct DiagnosticView: View {
     }
 
     private func stopUWB() {
+        activeNIAttemptID = nil
         nearby.stop()
         bluetooth.stopUWB()
     }
@@ -118,6 +121,12 @@ struct DiagnosticView: View {
                                 Text("2.0").tag(2)
                             }.disabled(bluetooth.isBusy || nearby.isRunning)
                         }
+                        Picker("Ensayo de direcciones", selection: $selectedAddressMode) {
+                            Text("Base (sin invertir)").tag(SamsungUWBAddressMode.baseline)
+                            Text("Solo etiqueta invertida").tag(SamsungUWBAddressMode.accessoryLittleEndian)
+                            Text("Solo iPhone invertido").tag(SamsungUWBAddressMode.phoneLittleEndian)
+                            Text("Ambas invertidas").tag(SamsungUWBAddressMode.bothLittleEndian)
+                        }.disabled(bluetooth.isBusy || nearby.isRunning)
                         Button("Iniciar prueba UWB") {
                             guard let id = selectedCandidateID else { return }
                             nearby.clear(); localError = nil
@@ -142,7 +151,7 @@ struct DiagnosticView: View {
                     } header: {
                         Text("Prueba experimental UWB")
                     } footer: {
-                        Text("Mantené la app abierta. La compatibilidad UWB aún no está confirmada. Si falla, detené la prueba y probá el otro perfil disponible. Solo se muestran metros recibidos de Nearby Interaction.")
+                        Text("Mantené la app abierta. La compatibilidad UWB aún no está confirmada. El ensayo cambia únicamente la representación de las dos direcciones enviadas a la etiqueta; no es una corrección verificada. Detené la prueba antes de cambiarlo. Solo se muestran metros recibidos de Nearby Interaction.")
                     }
                 }
                 if let message = localError ?? account.errorMessage ?? bluetooth.errorMessage ?? nearby.errorMessage {
@@ -164,13 +173,22 @@ struct DiagnosticView: View {
         }.tint(.blue)
         .onChange(of: bluetooth.uwbReady) { _, ready in
             if ready {
-                nearby.start(version: uwbVersion,
+                nearby.start(version: uwbVersion, addressMode: selectedAddressMode,
                              sendConfiguration: { bluetooth.sendUWBConfiguration($0) },
                              acceptDistance: { bluetooth.acceptUWBDistance($0) },
                              onStop: { bluetooth.stopUWB() })
+                activeNIAttemptID = nearby.attemptID
             } else if nearby.isRunning {
+                activeNIAttemptID = nil
                 nearby.stop()
+            } else {
+                activeNIAttemptID = nil
             }
+        }
+        .onChange(of: bluetooth.uwbActive) { _, active in
+            guard active, bluetooth.uwbActive, bluetooth.uwbReady, nearby.isRunning,
+                  let attempt = activeNIAttemptID, attempt == nearby.attemptID else { return }
+            nearby.configurationAcknowledged(attemptID: attempt)
         }
         .onChange(of: scenePhase) { _, phase in if phase == .background { stopUWB() } }
         .onChange(of: account.isSignedIn) { _, signedIn in if !signedIn { stopUWB() } }

@@ -4,11 +4,39 @@
 
 1. Firmá el nuevo IPA sin firmar e instalalo en el iPhone como las versiones anteriores.
 2. Iniciá sesión si hace falta, actualizá las etiquetas y seleccioná **Cleo**. Tocá **Buscar dispositivos cercanos** y seleccioná el dispositivo que ya permitió leer su batería.
-3. Dejá el **Perfil experimental 2.0**, seleccionado por defecto en iOS 26.1 o posterior, y tocá **Iniciar prueba UWB**. La app vuelve a autenticar la conexión Bluetooth y lee la batería automáticamente antes de preparar UWB; no hace falta ejecutar antes la prueba de batería.
+3. Dejá el **Perfil experimental 2.0**, seleccionado por defecto en iOS 26.1 o posterior, y el ensayo de direcciones **Base (sin invertir)** para conservar el paquete anterior. Tocá **Iniciar prueba UWB**. La app vuelve a autenticar la conexión Bluetooth y lee la batería automáticamente antes de preparar UWB; no hace falta ejecutar antes la prueba de batería.
 4. Aceptá el permiso de Nearby Interaction si aparece y mantené la app abierta en primer plano, con Cleo cerca. Comprobá si aparece **Distancia UWB** en metros y si cambia al mover la etiqueta.
 5. Si falla, tocá **Detener prueba UWB** antes de seleccionar el perfil **1.1** y comenzar otra prueba. Detené también la prueba al terminar.
 
 Todavía no se ha demostrado una medición real con Cleo. Una conexión Bluetooth, una batería leída o una configuración aceptada no confirman UWB. Si no aparecen metros, compartí el mensaje de estado y el **Registro técnico** de la app, que usa diagnósticos sanitizados; no compartas claves, tokens ni la URL de retorno del inicio de sesión.
+
+### Ensayo de representación de direcciones
+
+El selector **Ensayo de direcciones** conserva Base por defecto y permite invertir
+solo la etiqueta, solo el iPhone o ambas. Cambia exclusivamente los bytes de las
+dos direcciones del paquete Samsung; no altera la configuración Apple, el canal,
+los tiempos, el vendor ni el IV. Es una prueba de representación entre sistemas,
+no una corrección de compatibilidad demostrada. Los valores no se muestran y las
+colisiones de las direcciones efectivas se rechazan. El selector queda bloqueado
+mientras la prueba o el cierre Bluetooth estén activos. Detené cada intento antes
+de cambiarlo y reportá su modo junto con el resultado, sin enviar datos internos.
+
+### Plazos y observación de la sesión
+
+La app concede 30 segundos para preparar NI y confirmar la configuración por
+Bluetooth. El ACK de configuración del intento actual cancela ese temporizador y
+abre otro plazo completo de 30 segundos para la medición. Usa un reloj monotónico;
+ACKs o mediciones que lleguen al vencer el plazo no reviven el intento aunque la
+tarea del temporizador todavía no se haya ejecutado. El límite Bluetooth existente
+de 30 segundos tras su ACK permanece activo.
+
+El registro distingue solicitar la sesión de observar `sessionDidStartRunning`.
+La ausencia del callback se informa como no observada, sin afirmar que la radio no
+inició. Solo las primeras tres actualizaciones NI llevan un resumen de presencia
+de objeto/distancia y etapa; al terminar se informa la cuenta total. No se imprimen
+tokens, direcciones ni datos de radio privados. Los plazos **de la app** se
+distinguen de `didRemove(.timeout)`, emitido por el framework. Corregir los plazos
+de la app no demuestra haber encontrado la causa del timeout físico de Cleo.
 
 ## Apple configuration bridge
 
