@@ -38,12 +38,17 @@ final class UWBNotificationInspectorTests: XCTestCase {
                 ciphertext: Data(repeating: 0, count: length),
                 master: master, tagNonce: nonce, replay: &replay), .invalidCiphertext)
         }
-        var invalidPadding = try encrypted(SmartTagFrame(counter: 7,
+        let validPadding = try encrypted(SmartTagFrame(counter: 7,
             payload: Data(repeating: 0xA5, count: 35)).encoded)
-        // CBC flips the final plaintext padding byte from 9 to 246 deterministically.
-        invalidPadding[31] ^= 0xFF
-        XCTAssertEqual(UWBNotificationInspector.inspect(ciphertext: invalidPadding,
-            master: master, tagNonce: nonce, replay: &replay), .invalidCiphertext)
+        // Reject an out-of-range final padding byte and inconsistent repeated padding.
+        for index in [31, 30] {
+            var invalidPadding = validPadding
+            invalidPadding[index] ^= 0xFF
+            XCTAssertEqual(UWBNotificationInspector.inspect(ciphertext: invalidPadding,
+                master: master, tagNonce: nonce, replay: &replay), .invalidCiphertext)
+        }
+        XCTAssertEqual(UWBNotificationInspector.inspect(ciphertext: validPadding,
+            master: master, tagNonce: nonce, replay: &replay), .accepted(payloadLength: 35))
         for length in [0, 3, 4] {
             XCTAssertEqual(UWBNotificationInspector.inspect(
                 ciphertext: try encrypted(Data(repeating: 0, count: length)),
