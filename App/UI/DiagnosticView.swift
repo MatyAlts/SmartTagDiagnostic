@@ -12,6 +12,7 @@ struct DiagnosticView: View {
     @State private var localError: String?
     @State private var selectedUWBProfile = 2
     @State private var selectedAddressMode: SamsungUWBAddressMode = .baseline
+    @State private var requestedHopping = true
     @State private var activeNIAttemptID: UUID?
     private var selectedTag: TagDevice? { account.devices.first { $0.id == selectedTagID } }
     private var testing: Bool { ProcessInfo.processInfo.arguments.contains("-ui-testing") }
@@ -121,6 +122,9 @@ struct DiagnosticView: View {
                                 Text("2.0").tag(2)
                             }.disabled(bluetooth.isBusy || nearby.isRunning)
                         }
+                        Toggle("Solicitud hopping", isOn: $requestedHopping)
+                            .disabled(uwbVersion != .v2 || bluetooth.isBusy || nearby.isRunning)
+                            .accessibilityIdentifier("requestedHopping")
                         Picker("Ensayo de direcciones", selection: $selectedAddressMode) {
                             Text("Base (sin invertir)").tag(SamsungUWBAddressMode.baseline)
                             Text("Solo etiqueta invertida").tag(SamsungUWBAddressMode.accessoryLittleEndian)
@@ -151,7 +155,7 @@ struct DiagnosticView: View {
                     } header: {
                         Text("Prueba experimental UWB")
                     } footer: {
-                        Text("Mantené la app abierta. La compatibilidad UWB aún no está confirmada. El ensayo cambia únicamente la representación de las dos direcciones enviadas a la etiqueta; no es una corrección verificada. Detené la prueba antes de cambiarlo. Solo se muestran metros recibidos de Nearby Interaction.")
+                        Text("Mantené la app abierta. Solicitud hopping solo se puede cambiar con el perfil 2.0; Apple selecciona el resultado. Los ensayos no son correcciones verificadas. Detené la prueba antes de cambiar opciones. Solo se muestran metros recibidos de Nearby Interaction.")
                     }
                 }
                 if let message = localError ?? account.errorMessage ?? bluetooth.errorMessage ?? nearby.errorMessage {
@@ -173,7 +177,7 @@ struct DiagnosticView: View {
         }.tint(.blue)
         .onChange(of: bluetooth.uwbReady) { _, ready in
             if ready {
-                nearby.start(version: uwbVersion, addressMode: selectedAddressMode,
+                nearby.start(version: uwbVersion, addressMode: selectedAddressMode, requestedHopping: requestedHopping,
                              sendConfiguration: { bluetooth.sendUWBConfiguration($0) },
                              acceptDistance: { bluetooth.acceptUWBDistance($0) },
                              onStop: { bluetooth.stopUWB() })
@@ -184,6 +188,9 @@ struct DiagnosticView: View {
             } else {
                 activeNIAttemptID = nil
             }
+        }
+        .onChange(of: selectedUWBProfile) { _, profile in
+            if profile != 2 { requestedHopping = true }
         }
         .onChange(of: bluetooth.uwbActive) { _, active in
             guard active, bluetooth.uwbActive, bluetooth.uwbReady, nearby.isRunning,

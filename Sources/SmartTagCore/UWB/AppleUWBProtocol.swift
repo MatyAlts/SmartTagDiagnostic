@@ -13,16 +13,19 @@ public struct UWBAccessoryProfile {
     public let modelID: UInt32
     public let middlewareVersion: UInt32
     public let maximumClockDrift: UInt16
+    public let requestedHopping: Bool
 
     public init(version: AppleUWBVersion, accessoryAddress: UInt16,
                 manufacturerID: UInt32 = 0, modelID: UInt32 = 0,
-                middlewareVersion: UInt32 = 0, maximumClockDrift: UInt16 = 20) {
+                middlewareVersion: UInt32 = 0, maximumClockDrift: UInt16 = 20,
+                requestedHopping: Bool = true) {
         self.version = version
         self.accessoryAddress = accessoryAddress
         self.manufacturerID = manufacturerID
         self.modelID = modelID
         self.middlewareVersion = middlewareVersion
         self.maximumClockDrift = maximumClockDrift
+        self.requestedHopping = requestedHopping
     }
 }
 
@@ -69,7 +72,8 @@ public enum AppleUWBProtocolError: Error {
 public enum AppleUWBProtocol {
     /// Accessory protocol R4 table 3-2, interoperability R3/R4 table 4-2.
     public static func accessoryData(profile: UWBAccessoryProfile) throws -> Data {
-        guard validAddress(profile.accessoryAddress), profile.maximumClockDrift > 0 else {
+        guard validAddress(profile.accessoryAddress), profile.maximumClockDrift > 0,
+              profile.version == .v2 || profile.requestedHopping else {
             throw AppleUWBProtocolError.invalidProfile
         }
         var inner: [UInt8] = []
@@ -83,7 +87,7 @@ public enum AppleUWBProtocol {
         appendLE(profile.maximumClockDrift, to: &inner)
         if profile.version == .v2 {
             inner.append(contentsOf: [0, 0, 0, 0])
-            inner.append(1) // Request hopping; Apple may choose otherwise.
+            inner.append(profile.requestedHopping ? 1 : 0) // Request only; decode Apple's selection.
             appendLE(UInt16(6), to: &inner)
             appendLE(UInt16(2400), to: &inner)
             appendLE(UInt16(240), to: &inner)

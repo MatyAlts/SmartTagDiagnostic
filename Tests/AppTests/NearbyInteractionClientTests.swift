@@ -5,6 +5,20 @@ import NearbyInteraction
 
 @MainActor
 final class NearbyInteractionClientTests: XCTestCase {
+    func testVersionOneOffRequestFailsClearlyWithoutCreatingSessionOrSending() {
+        let client = NearbyInteractionClient(capabilityOverride: true)
+        var sends = 0
+        var stops = 0
+        client.start(version: .v1, requestedHopping: false,
+            sendConfiguration: { _ in sends += 1 }, acceptDistance: { $0 }, onStop: { stops += 1 })
+        XCTAssertFalse(client.isRunning)
+        XCTAssertNil(client.attemptID)
+        XCTAssertNil(client.distanceMeters)
+        XCTAssertTrue(client.errorMessage?.contains("2.0") == true)
+        XCTAssertEqual(sends, 0)
+        XCTAssertEqual(stops, 1)
+    }
+
     func testTransportAcknowledgementWithoutCurrentNISessionCannotStartMeasurements() {
         let client = NearbyInteractionClient(capabilityOverride: false)
         XCTAssertNil(client.attemptID)

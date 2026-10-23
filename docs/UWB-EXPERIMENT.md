@@ -68,7 +68,7 @@ The trial uses public Nearby Interaction foreground accessory APIs. Its compatib
 
 The [Apple accessory protocol R4](https://developer.apple.com/download/files/Nearby-Interaction-Accessory-Protocol-Specification-R4.pdf), section 3.4, defines the outer configuration header: version 1.0, preferred update rate 0 (automatic), ten reserved zero bytes, and the inner length. [Interoperability R3](https://developer.apple.com/download/files/Nearby-Interaction-with-UWB-Interoperability-Specification-R3.pdf), section 4, defines the version 1.1 inner configuration and generated output. The [R4 interoperability preview](https://developer.apple.com/download/files/Nearby-Interaction-with-UWB-Interoperability-Specification-Developer-Preview-R4.pdf) defines version 2.0 requests. The published tables were obtained from Apple's indexed document text; direct PDF retrieval returned 404 during research.
 
-The experimental profile explicitly declares manufacturer/model/middleware IDs 0 and maximum clock drift 20 ppm. These are assumptions, not recovered SmartTag hardware values. It selects an accessory initiator/controller role and a fresh random short accessory address. Version 2 requests hopping, six slots, 2400 RSTU slot duration and 240 ms interval; Apple selects the final values. The wrapper totals 37 bytes for version 1.1 and 48 for version 2.0.
+The experimental profile explicitly declares manufacturer/model/middleware IDs 0 and maximum clock drift 20 ppm. These are assumptions, not recovered SmartTag hardware values. It selects an accessory initiator/controller role and a fresh random short accessory address. Version 2 requests hopping by default, six slots, 2400 RSTU slot duration and 240 ms interval; Apple selects the final values. The wrapper totals 37 bytes for version 1.1 and 48 for version 2.0.
 
 Generated data is decoded only for the documented version and exact length: 30 bytes for version 1.1 or 35 for version 2.0. The length byte excludes its five-byte header. Fields use little endian. Unknown versions, malformed lengths, reserved bytes, hopping values, and radio parameters outside the trial profile stop the experiment. The Samsung adapter performs additional profile checks before any transmission.
 
@@ -80,4 +80,38 @@ Only a current, matching Nearby Interaction object's finite, nonnegative `distan
 The technical screen keeps Bluetooth and Nearby Interaction events in separate sections; it does not claim one interleaved chronology. Known 1.1/2.0 configurations report their length, version and radio fields before strict validation. Failures distinguish Apple decoding from Samsung translation and name unsupported fields without logging their secret values. Unknown layouts report only length/version.
 
 NI removal reports `timeout`, `peerEnded` or an unknown reason. NI invalidation reports only the numeric error code and whether parameters had been handed to the Bluetooth transport. That handoff is not a GATT acknowledgement or evidence of radio compatibility. No payload, session identifier, address, STS IV, token or key is included. A failed trial never becomes a distance result.
+
+## Solicitud experimental de hopping (solo perfil 2.0)
+
+**Solicitud hopping** permanece activada por defecto para conservar el paquete
+anterior. Con el perfil 2.0 y la prueba detenida se puede desactivar la solicitud.
+Solo cambia el byte 41 de la configuración inicial Apple; los otros campos y el
+ensayo de direcciones elegido permanecen iguales. Al elegir 1.1 la opción vuelve
+a su valor inicial y queda bloqueada: ese perfil no tiene este campo configurable.
+
+La solicitud no garantiza la selección. El registro con marcas de tiempo informa
+por separado el valor solicitado y el generado por Apple. Si se solicita OFF y
+Apple selecciona ON, aparece **Solicitud no concedida** antes de codificar o enviar
+parámetros UWB a la etiqueta. Nunca se fuerza OFF en el paquete Samsung. Si Apple
+selecciona OFF con la solicitud ON habitual, se conserva la aceptación anterior.
+El paquete Samsung siempre refleja la selección recibida, no la intención del
+selector; solo cambia su bit de hopping cuando los demás parámetros coinciden.
+
+Para comparar, mantené el mismo perfil 2.0 y ensayo de direcciones, ejecutá una
+prueba con la solicitud activada, detenela y repetí con la solicitud desactivada.
+Compartí el valor solicitado/seleccionado y el motivo de finalización, o metros
+reales si aparecen. OFF aceptado por Apple o un eco Bluetooth no demuestra que el
+firmware de Cleo pueda usar ese modo. La compatibilidad real continúa sin probarse.
+
+Evidencia acotada: [Apple R4, tabla 4-2 y sección 4.4.3.3](https://developer.apple.com/download/files/Nearby-Interaction-with-UWB-Interoperability-Specification-Developer-Preview-R4.pdf)
+permite solicitar 0/1 y devolver la selección; solo se recuperaron extractos
+oficiales indexados, no el PDF completo. [uTag fijado](https://github.com/KieronQuinn/uTag/blob/f46375a9c2af6de4c8678f6aba7b91972054ae74/app/src/main/java/com/kieronquinn/app/utag/components/uwb/UwbConfig.kt)
+solicita 1 y codifica la selección en el bit global 34 del paquete de la etiqueta.
+El valor Android DISABLE=0 no prueba que el firmware Samsung lo admita.
+
+La [implementación AOSP del codificador](https://android.googlesource.com/platform/packages/modules/Uwb/+/25caf0858e7e2ac5cb3e8e99b8376f11f30bcbad/service/java/com/android/server/uwb/params/FiraEncoder.java)
+también aplica reglas de orden de MAC/vendor según versión de Android. Esto no
+establece una traducción universal para iOS. La investigación limitada al APK no
+recuperó la implementación UCI externa ni demostró otro cambio de radio correcto;
+este selector es un experimento documentado y no una solución confirmada.
 

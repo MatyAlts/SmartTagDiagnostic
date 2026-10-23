@@ -3,6 +3,17 @@ import XCTest
 @testable import SmartTagCore
 
 final class SamsungUWBProtocolTests: XCTestCase {
+    func testAppleSelectedHoppingAloneControlsSamsungBitWithoutOtherPacketChanges() throws {
+        let selectedOn = try Data(hex: "020000001e5555785634120a0906006009f00003010203040506785614000000000001")
+        var selectedOff = selectedOn; selectedOff[34] = 0
+        let on = try SamsungUWBProtocol.configuration(parameters: AppleUWBProtocol.decodeShareable(selectedOn), accessoryAddress: 0x1234)
+        let off = try SamsungUWBProtocol.configuration(parameters: AppleUWBProtocol.decodeShareable(selectedOff), accessoryAddress: 0x1234)
+        XCTAssertEqual(on.hex, "002f0c9c0512345678123456780907d000f0030a0105004c0102030405060600000000")
+        XCTAssertEqual(off.hex, "002f0c9c0112345678123456780907d000f0030a0105004c0102030405060600000000")
+        XCTAssertEqual(on.indices.filter { on[$0] != off[$0] }, [4])
+        XCTAssertEqual(on[4] ^ off[4], 0x04)
+    }
+
     private func parameters(sessionID: UInt32 = 0x01020304, preamble: UInt8 = 10,
                             channel: UInt8 = 9, slots: UInt16 = 6,
                             slotDurationRSTU: UInt16 = 2400, interval: UInt16 = 240,

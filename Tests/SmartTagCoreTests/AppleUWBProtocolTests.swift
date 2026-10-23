@@ -3,6 +3,40 @@ import XCTest
 @testable import SmartTagCore
 
 final class AppleUWBProtocolTests: XCTestCase {
+    func testDefaultHoppingRequestRetainsExplicitOnBootstrapVector() throws {
+        let defaultProfile = UWBAccessoryProfile(version: .v2, accessoryAddress: 0x1234,
+            manufacturerID: 0x11223344, modelID: 0x55667788,
+            middlewareVersion: 0x99aabbcc, maximumClockDrift: 30)
+        let explicit = UWBAccessoryProfile(version: .v2, accessoryAddress: 0x1234,
+            manufacturerID: 0x11223344, modelID: 0x55667788,
+            middlewareVersion: 0x99aabbcc, maximumClockDrift: 30, requestedHopping: true)
+        let expected = try Data(hex: "01000000000000000000000000000020020000004433221188776655ccbbaa990134121e00000000000106006009f000")
+        XCTAssertEqual(try AppleUWBProtocol.accessoryData(profile: defaultProfile), expected)
+        XCTAssertEqual(try AppleUWBProtocol.accessoryData(profile: explicit), expected)
+    }
+
+    func testOffHoppingRequestChangesOnlyItsDocumentedByte() throws {
+        let off = UWBAccessoryProfile(version: .v2, accessoryAddress: 0x1234,
+            manufacturerID: 0x11223344, modelID: 0x55667788,
+            middlewareVersion: 0x99aabbcc, maximumClockDrift: 30, requestedHopping: false)
+        let on = UWBAccessoryProfile(version: .v2, accessoryAddress: 0x1234,
+            manufacturerID: 0x11223344, modelID: 0x55667788,
+            middlewareVersion: 0x99aabbcc, maximumClockDrift: 30, requestedHopping: true)
+        let expected = try Data(hex: "01000000000000000000000000000020020000004433221188776655ccbbaa990134121e00000000000006006009f000")
+        let result = try AppleUWBProtocol.accessoryData(profile: off)
+        let baseline = try AppleUWBProtocol.accessoryData(profile: on)
+        XCTAssertEqual(result, expected)
+        XCTAssertEqual(result.count, 48)
+        XCTAssertEqual(result.indices.filter { result[$0] != baseline[$0] }, [41])
+    }
+
+    func testVersionOneCannotEncodeAnOffHoppingRequest() {
+        let profile = UWBAccessoryProfile(version: .v1, accessoryAddress: 0x1234, requestedHopping: false)
+        XCTAssertThrowsError(try AppleUWBProtocol.accessoryData(profile: profile)) { error in
+            guard case AppleUWBProtocolError.invalidProfile = error else { return XCTFail("Expected invalid profile") }
+        }
+    }
+
     func testAccessoryV1BootstrapVector() throws {
         let profile = UWBAccessoryProfile(version: .v1, accessoryAddress: 0x1234)
         let expected = try Data(hex: "01000000000000000000000000000015010001000000000000000000000000000134121400")

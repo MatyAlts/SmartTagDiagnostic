@@ -26,6 +26,7 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
     private var sentConfiguration = false
     private var progress = NITrialProgress()
     private var addressMode: SamsungUWBAddressMode = .baseline
+    private var requestedHopping = true
 
     var supportsUWB: Bool {
         capabilityOverride ?? NISession.deviceCapabilities.supportsPreciseDistanceMeasurement
@@ -38,6 +39,7 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
     }
 
     func start(version: AppleUWBVersion, addressMode: SamsungUWBAddressMode = .baseline,
+               requestedHopping: Bool = true,
                sendConfiguration: @escaping (Data) -> Void,
                acceptDistance: @escaping (Double?) -> Double?, onStop: @escaping () -> Void) {
         stop()
@@ -46,8 +48,15 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
         self.acceptDistance = acceptDistance
         self.onStop = onStop
         self.addressMode = addressMode
+        self.requestedHopping = requestedHopping
         guard supportsUWB else {
             fail("Este dispositivo no admite medición precisa UWB.")
+            return
+        }
+        do {
+            try UWBHoppingAdmission.validateRequest(version: version, requestedHopping: requestedHopping)
+        } catch {
+            fail(error.localizedDescription)
             return
         }
         // Unit/UI tests never create an NI session or request hardware permissions.
@@ -64,7 +73,8 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
             }
         }
         accessoryAddress = UInt16.random(in: 1...65533)
-        let profile = UWBAccessoryProfile(version: version, accessoryAddress: accessoryAddress)
+        let profile = UWBAccessoryProfile(version: version, accessoryAddress: accessoryAddress,
+                                          requestedHopping: requestedHopping)
         do {
             let data = try AppleUWBProtocol.accessoryData(profile: profile)
             let configuration = try NINearbyAccessoryConfiguration(data: data)
@@ -79,6 +89,9 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
             progress.begin(attemptID: generation, now: ProcessInfo.processInfo.systemUptime)
             phase = "Preparando Nearby Interaction…"
             log("Se solicitó una sesión NI con perfil experimental \(version == .v2 ? "2.0" : "1.1").")
+            log(version == .v2
+                ? "Solicitud hopping de este intento: \(requestedHopping ? "activado" : "desactivado"). Apple puede elegir otro valor."
+                : "Perfil 1.1: no se envía un campo configurable de solicitud hopping.")
             log("Ensayo de representación de direcciones: \(Self.addressModeDescription(addressMode)). No es una corrección de compatibilidad confirmada.")
             log("Declaraciones experimentales: fabricante, modelo y middleware en 0; deriva máxima 20 ppm. Capacidades no confirmadas para la etiqueta.")
             armProgressDeadline()
@@ -185,15 +198,19 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
             fail(UWBDiagnostics.rejection(error, stage: .appleDecode))
             return
         }
+        log("Hopping seleccionado por Apple: \(parameters.hopping ? "activado" : "desactivado"). No se sustituye por el valor solicitado.")
         do {
-            let translated = try SamsungUWBProtocol.configuration(parameters: parameters, accessoryAddress: accessoryAddress,
-                                                                  addressMode: addressMode)
-            guard !expireIfNeeded(now: ProcessInfo.processInfo.systemUptime),
-                  progress.configurationGenerated(attemptID: current) else { return }
-            sentConfiguration = true
-            phase = "Esperando confirmación Bluetooth…"
-            log("Parámetros NI entregados al transporte Bluetooth; todavía no confirma recepción ni compatibilidad de radio.")
-            sendConfiguration?(translated)
+            try UWBHoppingAdmission.prepareAndSend(parameters: parameters, accessoryAddress: accessoryAddress,
+                addressMode: addressMode, requestedHopping: requestedHopping) { translated in
+                guard !self.expireIfNeeded(now: ProcessInfo.processInfo.systemUptime),
+                      self.progress.configurationGenerated(attemptID: current) else { return }
+                self.sentConfiguration = true
+                self.phase = "Esperando confirmación Bluetooth…"
+                self.log("Parámetros NI entregados al transporte Bluetooth; todavía no confirma recepción ni compatibilidad de radio.")
+                self.sendConfiguration?(translated)
+            }
+        } catch let refusal as UWBHoppingAdmission.Failure {
+            fail(refusal.localizedDescription)
         } catch {
             let fields = UWBDiagnostics.unsupportedSamsungFields(parameters, accessoryAddress: accessoryAddress)
             if !fields.isEmpty { log("Campos fuera del perfil Samsung: " + fields.joined(separator: ", ") + ".") }

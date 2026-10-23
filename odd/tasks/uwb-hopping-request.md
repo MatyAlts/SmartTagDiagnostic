@@ -14,3 +14,6 @@ StrictTDDenableduserAGENTS; native swift test/xcodebuild test macOSActions, Wind
 
 ## Progress
 Appleindependentread-onlyauditcompleted; Samsungfocusedcorroborationpending. Baseline39964014518inprogress. No sourcewritestilltracker+mirrorcomplete.
+
+- Samsungcorroborationcomplete: pinneduTagbit34controlsheaderbyte4mask04; disabledFiRaenum/default0 butuTagalwayshopson, firmwareoffacceptanceunknown. AOSP25caf085FiraEncoder426-437 convertsMAC/vendorarraysdifferentlypreAndroid14vs14+, IVunchanged276-280; universalfirmwaremappingunproved. APK11DEXboundedsearchdidnotlocateexternalUCIimplementation.
+- Baseline39964014518nativePASSbeforetestwrites. Tests-onlyacd6ce1:10newmethods; coreRED39965746616 extrarequestedHoppingargumentobservedbeforecoreproductiona66ba6a. CoreGREEN/AppRED39965966094running. NoAppproductionyet.
