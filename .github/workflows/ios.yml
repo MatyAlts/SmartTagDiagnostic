@@ -37,9 +37,11 @@ jobs:
           PY
       - name: Build and test simulator app
         run: |
-          xcodebuild test -project SmartTagDiagnostic.xcodeproj -scheme SmartTagDiagnostic -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -resultBundlePath build/UITests.xcresult CODE_SIGNING_ALLOWED=NO
+          xcodebuild test -project SmartTagDiagnostic.xcodeproj -scheme SmartTagDiagnostic -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -derivedDataPath build/DerivedData -resultBundlePath build/UITests.xcresult CODE_SIGNING_ALLOWED=NO
       - name: Capture native iPhone layout
         run: |
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b
+          xcrun simctl install "$SIMULATOR_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/SmartTagDiagnostic.app
           xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" org.local.SmartTagDiagnostic -ui-testing
           sleep 3
           xcrun simctl io "$SIMULATOR_ID" screenshot build/iphone-layout.png
