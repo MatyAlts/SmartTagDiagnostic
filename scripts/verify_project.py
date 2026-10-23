@@ -1,6 +1,16 @@
 """Portable configuration checks; does not compile Swift or prove interoperability."""
 import plistlib
+import re
 from pathlib import Path
+
+
+def inspect_target_types(spec):
+    # The diagnostic has only these product types; XcodeGen calls unit tests
+    # bundle.unit-test, while UI tests use the distinct bundle.ui-testing name.
+    supported = {'application', 'bundle.unit-test', 'bundle.ui-testing'}
+    product_types = re.findall(r'^\s+type:\s*(\S+)\s*$', spec, re.MULTILINE)
+    return ['Unsupported diagnostic target type: ' + product_type
+            for product_type in product_types if product_type not in supported]
 
 
 def inspect_plist(path):
@@ -20,6 +30,7 @@ def inspect_plist(path):
 def main():
     root = Path(__file__).resolve().parents[1]
     errors = inspect_plist(root / 'App/Info.plist')
+    errors.extend(inspect_target_types((root / 'project.yml').read_text(encoding='utf-8')))
     required = ['project.yml', 'Package.swift', 'App/SmartTagDiagnosticApp.swift',
                 'App/UI/DiagnosticView.swift', 'Tests/UITests/DiagnosticUITests.swift',
                 'Tests/AppTests/AccountSecurityTests.swift',
