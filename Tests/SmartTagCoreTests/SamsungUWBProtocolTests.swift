@@ -64,4 +64,56 @@ final class SamsungUWBProtocolTests: XCTestCase {
                 parameters: parameters(iv: Data(repeating: 0, count: length)), accessoryAddress: 0x1122))
         }
     }
+
+    func testExperimentalAddressModesChangeOnlyTheirTwoWireBytes() throws {
+        let input = parameters(phoneAddress: 0x5678)
+        let vectors: [(SamsungUWBAddressMode, String)] = [
+            (.baseline, "12345678"), (.accessoryLittleEndian, "34125678"),
+            (.phoneLittleEndian, "12347856"), (.bothLittleEndian, "34127856")]
+        let baseline = try SamsungUWBProtocol.configuration(parameters: input, accessoryAddress: 0x1234)
+        for (mode, addresses) in vectors {
+            let expected = try Data(hex: "002f0c9c0501020304" + addresses + "0907d000f0030a0105004c0102030405060600000000")
+            let actual = try SamsungUWBProtocol.configuration(parameters: input,
+                accessoryAddress: 0x1234, addressMode: mode)
+            XCTAssertEqual(actual, expected)
+            XCTAssertEqual(actual.prefix(9), baseline.prefix(9))
+            XCTAssertEqual(actual.dropFirst(13), baseline.dropFirst(13))
+        }
+        XCTAssertEqual(baseline, try SamsungUWBProtocol.configuration(parameters: input,
+            accessoryAddress: 0x1234, addressMode: .baseline))
+    }
+
+    func testWireAddressCollisionsAreRejectedAfterOneSidedSwap() throws {
+        let input = parameters(phoneAddress: 0x3412)
+        for mode: SamsungUWBAddressMode in [.accessoryLittleEndian, .phoneLittleEndian] {
+            XCTAssertThrowsError(try SamsungUWBProtocol.configuration(parameters: input,
+                accessoryAddress: 0x1234, addressMode: mode)) { error in
+                guard case SamsungUWBError.addressCollision = error else {
+                    return XCTFail("Expected effective wire-address collision")
+                }
+            }
+        }
+        for mode: SamsungUWBAddressMode in [.baseline, .bothLittleEndian] {
+            XCTAssertEqual(try SamsungUWBProtocol.configuration(parameters: input,
+                accessoryAddress: 0x1234, addressMode: mode).count, 35)
+        }
+    }
+
+    func testEveryAddressModePreservesExistingInvalidInputGuards() {
+        let inputs = [parameters(sessionID: 0), parameters(phoneAddress: 0),
+            parameters(phoneAddress: .max), parameters(phoneAddress: 0x1234),
+            parameters(channel: 5), parameters(preamble: 8), parameters(slots: 7),
+            parameters(slotDurationRSTU: 2000), parameters(interval: 0),
+            parameters(roundControl: 0), parameters(iv: Data(repeating: 0, count: 5))]
+        for mode: SamsungUWBAddressMode in [.baseline, .accessoryLittleEndian, .phoneLittleEndian, .bothLittleEndian] {
+            for input in inputs {
+                XCTAssertThrowsError(try SamsungUWBProtocol.configuration(parameters: input,
+                    accessoryAddress: 0x1234, addressMode: mode))
+            }
+            for address in [UInt16(0), .max] {
+                XCTAssertThrowsError(try SamsungUWBProtocol.configuration(parameters: parameters(),
+                    accessoryAddress: address, addressMode: mode))
+            }
+        }
+    }
 }

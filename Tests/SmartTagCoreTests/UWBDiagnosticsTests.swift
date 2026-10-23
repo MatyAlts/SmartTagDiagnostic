@@ -3,6 +3,10 @@ import XCTest
 @testable import SmartTagCore
 
 final class UWBDiagnosticsTests: XCTestCase {
+    func testWireAddressCollisionHasSanitizedSpecificReason() {
+        XCTAssertEqual(UWBDiagnostics.rejection(SamsungUWBError.addressCollision, stage: .samsungTranslation),
+            "Etapa: traducción Samsung. Motivo: colisión de direcciones internas en el formato enviado.")
+    }
     func testBothKnownProfilesExposeOnlyStructuralAndRadioFields() throws {
         for hex in ["01000100195553785634120a0906006009f0000301020304050678561400",
                     "020000001e5553785634120b0906006009f00003010203040506785614000000000001"] {
