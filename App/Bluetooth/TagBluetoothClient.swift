@@ -40,6 +40,8 @@ struct NearbyTag: Identifiable {
     private var proofVerified = false
     private var batteryRequested = false
     private var timeout: Task<Void, Never>?
+    private var operationDeadline = BLEOperationDeadline()
+    private let timeline: DiagnosticTimeline
     private var replay = ReplayCounter()
     private var forUWB = false
     private var subscriptionsStarted = false
@@ -52,7 +54,8 @@ struct NearbyTag: Identifiable {
     private var connectionLifecycle = BLEConnectionLifecycle()
     private var attemptDelegate: BLEAttemptDelegate?
 
-    override init() {
+    init(timeline: DiagnosticTimeline = .process) {
+        self.timeline = timeline
         super.init()
     }
 
@@ -75,7 +78,7 @@ struct NearbyTag: Identifiable {
         clear(); candidates = []; found = [:]
         isBusy = true; phase = "Buscando etiquetas cercanas"
         central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
-        armTimeout(seconds: 12, scanning: true)
+        armTimeout(.scan)
         log("Búsqueda iniciada. Seleccioná tu etiqueta; la autenticación comprobará su identidad.")
     }
 
@@ -87,7 +90,7 @@ struct NearbyTag: Identifiable {
         guard peripheral == nil, let candidate = found[candidateID], let central, central.state == .poweredOn else {
             fail("Seleccioná una etiqueta detectada con Bluetooth disponible."); return
         }
-        central.stopScan(); timeout?.cancel()
+        central.stopScan(); cancelTimeout()
         resetHandshake(); self.forUWB = forUWB
         self.credentials = credentials; battery = nil; errorMessage = nil
         var random = [UInt8](repeating: 0, count: 16)
@@ -110,7 +113,7 @@ struct NearbyTag: Identifiable {
     private func finishDisconnect() {
         expectedUWBConfiguration = nil
         if connectionLifecycle.state == .disconnecting { return }
-        pendingScan = false; central?.stopScan(); timeout?.cancel()
+        pendingScan = false; central?.stopScan(); cancelTimeout()
         guard let peripheral, let generation = connectionLifecycle.currentGeneration else {
             credentials = nil; resetHandshake(); authentication.cancel()
             isBusy = false; phase = "Desconectado"; return
@@ -119,33 +122,19 @@ struct NearbyTag: Identifiable {
         // Keep the peripheral and cancellation barrier, but wipe session secrets now.
         credentials = nil; resetHandshake(); authentication.cancel()
         isBusy = true; phase = "Cerrando la conexión Bluetooth"
+        log("Se solicitó el cierre Bluetooth; plazo de confirmación 5 s.")
         central?.cancelPeripheralConnection(peripheral)
-        armDisconnectTimeout(generation: generation)
+        armTimeout(.disconnect)
     }
 
     private func completeDisconnect(generation: UInt64, retiredManager: Bool = false) {
         guard connectionLifecycle.didDisconnect(generation: generation) else { return }
-        timeout?.cancel(); peripheral?.delegate = nil; attemptDelegate = nil
+        cancelTimeout(); peripheral?.delegate = nil; attemptDelegate = nil
         peripheral = nil; credentials = nil; resetHandshake(); authentication.cancel()
         isBusy = false
         phase = errorMessage == nil ? "Conexión cerrada; podés volver a intentar" : "Detenido"
         if !retiredManager {
             log("CoreBluetooth confirmó el cierre. La selección cercana se conserva para reintentar.")
-        }
-    }
-
-    private func armDisconnectTimeout(generation: UInt64) {
-        timeout = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
-            guard let self, self.connectionLifecycle.currentGeneration == generation,
-                  self.connectionLifecycle.state == .disconnecting else { return }
-            // A fresh manager prevents late central callbacks from reaching a retry.
-            self.central?.delegate = nil; self.central = nil
-            self.found = [:]; self.candidates = []
-            self.completeDisconnect(generation: generation, retiredManager: true)
-            self.errorMessage = "Bluetooth no confirmó el cierre. Volvé a buscar dispositivos cercanos."
-            self.phase = "Se reinició la conexión Bluetooth"
-            self.log("Se retiró la conexión anterior por falta de confirmación de cierre; hace falta una nueva búsqueda.")
         }
     }
 
@@ -167,7 +156,7 @@ struct NearbyTag: Identifiable {
         commandCounter = UWBCommandCounter(); pendingUWBWrite = nil; queuedStop = false
     }
     private func log(_ message: String) {
-        events.append(message)
+        events.append(timeline.stamp(message))
         if events.count > 100 { events.removeFirst(events.count - 100) }
     }
     private func fail(_ message: String) {
@@ -177,18 +166,65 @@ struct NearbyTag: Identifiable {
         else { finishDisconnect() }
         phase = "Detenido"
     }
-    private func armTimeout(seconds: UInt64 = 15, scanning: Bool = false) {
-        timeout?.cancel()
+    private func cancelTimeout() {
+        timeout?.cancel(); timeout = nil
+        operationDeadline.cancel()
+    }
+
+    private func armTimeout(_ scope: BLEOperationDeadline.Scope = .operation) {
+        // Late discovery/auth callbacks cannot replace an in-flight STOP budget.
+        guard scope != .operation || uwbFlow.state != .stopping else { return }
+        cancelTimeout()
+        let ticket = operationDeadline.arm(scope, generation: connectionLifecycle.currentGeneration,
+                                           now: ProcessInfo.processInfo.systemUptime)
         timeout = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: seconds * 1_000_000_000) } catch { return }
-            guard let self else { return }
-            if scanning {
-                self.central?.stopScan(); self.isBusy = false; self.phase = "Seleccioná una etiqueta cercana"
-                self.log("Búsqueda finalizada.")
-            } else if self.forUWB, self.uwbFlow.state == .stopping {
-                self.log("Terminó el plazo de parada UWB; se cerró la conexión.")
-                self.performUWB(self.uwbFlow.receive(.timeout))
-            } else { self.fail("Se agotó el tiempo de la operación Bluetooth.") }
+            // Recheck the monotonic boundary after sleep; an early wake must not
+            // discard the current deadline or act on a newer operation.
+            while !Task.isCancelled {
+                let delay = max(0, ticket.deadline - ProcessInfo.processInfo.systemUptime)
+                if delay > 0 {
+                    do { try await Task.sleep(nanoseconds: UInt64(ceil(delay * 1_000_000_000))) }
+                    catch { return }
+                }
+                guard !Task.isCancelled, let self,
+                      self.operationDeadline.current == ticket else { return }
+                guard let expired = self.operationDeadline.consume(ticket,
+                    generation: self.connectionLifecycle.currentGeneration,
+                    now: ProcessInfo.processInfo.systemUptime) else {
+                    if ticket.generation != self.connectionLifecycle.currentGeneration { return }
+                    continue
+                }
+                self.timeout = nil
+                self.deadlineExpired(expired, generation: ticket.generation)
+                return
+            }
+        }
+    }
+
+    private func deadlineExpired(_ scope: BLEOperationDeadline.Scope, generation: UInt64?) {
+        switch scope {
+        case .scan:
+            central?.stopScan(); isBusy = false; phase = "Seleccioná una etiqueta cercana"
+            log("Búsqueda finalizada.")
+        case .operation:
+            fail("Se agotó el tiempo de la operación Bluetooth.")
+        case .rangingFallback:
+            fail("Venció el límite de seguridad Bluetooth (35 s desde la configuración); se solicita detener UWB.")
+        case .stopQueue:
+            log("Venció la espera de la escritura pendiente (3 s); STOP no llegó a enviarse. Se solicita cerrar Bluetooth.")
+            performUWB(uwbFlow.receive(.timeout))
+        case .stopAcknowledgement:
+            log("Venció el plazo de confirmación de STOP (3 s desde su envío); se solicita cerrar Bluetooth.")
+            performUWB(uwbFlow.receive(.timeout))
+        case .disconnect:
+            guard let generation, connectionLifecycle.state == .disconnecting else { return }
+            // Retire the manager so late central callbacks cannot reach a retry.
+            central?.delegate = nil; central = nil
+            found = [:]; candidates = []
+            completeDisconnect(generation: generation, retiredManager: true)
+            errorMessage = "Bluetooth no confirmó el cierre. Volvé a buscar dispositivos cercanos."
+            phase = "Se reinició la conexión Bluetooth"
+            log("Se retiró la conexión anterior por falta de confirmación de cierre; hace falta una nueva búsqueda.")
         }
     }
 
@@ -267,7 +303,12 @@ struct NearbyTag: Identifiable {
         case .writeStop:
             expectedUWBConfiguration = nil
             uwbReady = false; uwbActive = false; queuedStop = true
-            phase = "Deteniendo UWB"; armTimeout(seconds: 3)
+            phase = "Deteniendo UWB"
+            log("Se solicitó detener UWB.")
+            if pendingUWBWrite != nil {
+                log("STOP espera una escritura anterior; plazo de espera 3 s.")
+                armTimeout(.stopQueue)
+            }
             flushUWBStop()
         case .disconnect:
             finishDisconnect()
@@ -285,8 +326,10 @@ struct NearbyTag: Identifiable {
         guard pendingUWBWrite == nil, let peripheral, peripheral.state == .connected,
               central?.state == .poweredOn, proofVerified, let credentials, let tagNonce,
               let characteristic = characteristics[id], characteristic.properties.contains(.write) else {
-            if uwbFlow.state == .stopping { finishDisconnect() }
-            else { fail("No se puede enviar la orden UWB con esta conexión.") }
+            if uwbFlow.state == .stopping {
+                log("STOP no se pudo enviar con la conexión actual; se solicita cerrar Bluetooth.")
+                finishDisconnect()
+            } else { fail("No se puede enviar la orden UWB con esta conexión.") }
             return
         }
         do {
@@ -300,11 +343,14 @@ struct NearbyTag: Identifiable {
             if kind == .configuration {
                 expectedUWBConfiguration = payload.count == 35 ? payload : nil
             }
+            if kind == .stop { log("STOP entregado a CoreBluetooth; plazo de confirmación 3 s.") }
             peripheral.writeValue(encrypted, for: characteristic, type: .withResponse)
-            armTimeout(seconds: uwbFlow.state == .stopping ? 3 : 15)
+            armTimeout(kind == .stop ? .stopAcknowledgement : .operation)
         } catch {
-            if uwbFlow.state == .stopping { finishDisconnect() }
-            else { fail("No se pudo preparar la orden cifrada UWB.") }
+            if uwbFlow.state == .stopping {
+                log("No se pudo preparar STOP; se solicita cerrar Bluetooth.")
+                finishDisconnect()
+            } else { fail("No se pudo preparar la orden cifrada UWB.") }
         }
     }
 
@@ -314,6 +360,7 @@ struct NearbyTag: Identifiable {
         guard characteristic.uuid == expected else { return }
         pendingUWBWrite = nil
         if uwbFlow.state == .stopping, pending != .stop {
+            log("Terminó la escritura anterior; se intenta enviar STOP.")
             flushUWBStop(); return
         }
         guard error == nil else {
@@ -328,7 +375,8 @@ struct NearbyTag: Identifiable {
             uwbActive = uwbFlow.state == .active
             phase = "Esperando una medición UWB real"
             log("Parámetros UWB enviados. La confirmación Bluetooth no demuestra compatibilidad de radio.")
-            armTimeout(seconds: 30)
+            log("Límite de seguridad Bluetooth armado a 35 s; NI conserva su plazo de medición de 30 s.")
+            armTimeout(.rangingFallback)
         case .stop:
             log("La escritura de parada UWB fue confirmada.")
             performUWB(uwbFlow.receive(.stopAcknowledged))
@@ -377,7 +425,7 @@ extension TagBluetoothClient: CBCentralManagerDelegate {
         guard self.central === central else { return }
         if pendingScan {
             if central.state == .unknown || central.state == .resetting { return }
-            pendingScan = false; isBusy = false; timeout?.cancel()
+            pendingScan = false; isBusy = false; cancelTimeout()
             if central.state == .poweredOn { scan() }
             else { fail("Activá Bluetooth y permití su acceso desde Ajustes.") }
             return

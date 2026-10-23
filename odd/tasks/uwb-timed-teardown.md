@@ -17,3 +17,5 @@ Strict TDD ON by user AGENTS.md: native swift test/xcodebuild test macOS Actions
 
 ## Verification and progress
 Baseline remote39958989027 running at unchanged e4eb06a. Mapping delegated /root/timer_close_audit; writer will read this record before edits. No source writes yet.
+
+- Baseline39958989027 complete SUCCESS at unchanged e4eb06a before tests. Tests-only temporary commitad39628 (10newApp cases) nativeRED39959874676 missing BLEOperationDeadline/related APIs observed before production. Delegated writer GO. Final workunit will combine tests+production afterGREEN; temporary commit remains test-first evidence only. No final IPA yet.

@@ -13,6 +13,7 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
     @Published private(set) var isRunning = false
     @Published private(set) var attemptID: UUID?
     private let capabilityOverride: Bool?
+    private let timeline: DiagnosticTimeline
     private var session: NISession?
     private var token: NIDiscoveryToken?
     private var accessoryAddress: UInt16 = 1
@@ -30,8 +31,9 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
         capabilityOverride ?? NISession.deviceCapabilities.supportsPreciseDistanceMeasurement
     }
 
-    init(capabilityOverride: Bool? = nil) {
+    init(capabilityOverride: Bool? = nil, timeline: DiagnosticTimeline = .process) {
         self.capabilityOverride = capabilityOverride
+        self.timeline = timeline
         super.init()
     }
 
@@ -76,9 +78,9 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
             attemptID = generation
             progress.begin(attemptID: generation, now: ProcessInfo.processInfo.systemUptime)
             phase = "Preparando Nearby Interaction…"
-            events.append("Se solicitó una sesión NI con perfil experimental \(version == .v2 ? "2.0" : "1.1").")
-            events.append("Ensayo de representación de direcciones: \(Self.addressModeDescription(addressMode)). No es una corrección de compatibilidad confirmada.")
-            events.append("Declaraciones experimentales: fabricante, modelo y middleware en 0; deriva máxima 20 ppm. Capacidades no confirmadas para la etiqueta.")
+            log("Se solicitó una sesión NI con perfil experimental \(version == .v2 ? "2.0" : "1.1").")
+            log("Ensayo de representación de direcciones: \(Self.addressModeDescription(addressMode)). No es una corrección de compatibilidad confirmada.")
+            log("Declaraciones experimentales: fabricante, modelo y middleware en 0; deriva máxima 20 ppm. Capacidades no confirmadas para la etiqueta.")
             armProgressDeadline()
             next.run(configuration)
         } catch {
@@ -88,9 +90,9 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
 
     func stop() {
         if isRunning {
-            events.append("Resumen NI: \(progress.updateCount) actualizaciones del intento; etapa \(progress.stage.label).")
+            log("Resumen NI: \(progress.updateCount) actualizaciones del intento; etapa \(progress.stage.label).")
             if !progress.hasObservedRunning {
-                events.append("Callback sessionDidStartRunning no observado para este intento; su ausencia no demuestra que la radio no iniciara.")
+                log("Callback sessionDidStartRunning no observado para este intento; su ausencia no demuestra que la radio no iniciara.")
             }
         }
         generation = UUID()
@@ -118,11 +120,17 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
         events.removeAll()
     }
 
+    private func log(_ message: String) {
+        events.append(timeline.stamp(message))
+        if events.count > 100 { events.removeFirst(events.count - 100) }
+    }
+
     private func fail(_ message: String) {
-        stop()
+        // Record the cause before stop() invokes Bluetooth teardown callbacks.
         errorMessage = message
+        log(message)
+        stop()
         phase = "Prueba detenida"
-        events.append(message)
     }
 
     private func armProgressDeadline() {
@@ -152,7 +160,7 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
         guard isRunning, self.attemptID == attemptID, session != nil, token != nil, sentConfiguration else { return false }
         let now = ProcessInfo.processInfo.systemUptime
         guard !expireIfNeeded(now: now), progress.transportAcknowledged(attemptID: attemptID, now: now) else { return false }
-        events.append("La escritura de configuración recibió confirmación Bluetooth; comienza el plazo de medición de la app (30 s). No confirma éxito de radio.")
+        log("La escritura de configuración recibió confirmación Bluetooth; comienza el plazo de medición de la app (30 s). No confirma éxito de radio.")
         phase = "Esperando medición UWB…"
         armProgressDeadline()
         return true
@@ -161,7 +169,7 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
     func sessionDidStartRunning(_ session: NISession) {
         guard self.session === session, isRunning, let current = attemptID,
               progress.observedRunning(attemptID: current) else { return }
-        events.append("Se observó sessionDidStartRunning para este intento. Todavía no demuestra una medición de distancia.")
+        log("Se observó sessionDidStartRunning para este intento. Todavía no demuestra una medición de distancia.")
     }
 
     func session(_ session: NISession, didGenerateShareableConfigurationData data: Data,
@@ -169,7 +177,7 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
         guard self.session === session, isRunning, object.discoveryToken == token,
               !sentConfiguration else { return }
         guard let current = attemptID, !expireIfNeeded(now: ProcessInfo.processInfo.systemUptime) else { return }
-        events.append(contentsOf: UWBDiagnostics.shareableSummary(data))
+        for summary in UWBDiagnostics.shareableSummary(data) { log(summary) }
         let parameters: AppleUWBParameters
         do {
             parameters = try AppleUWBProtocol.decodeShareable(data)
@@ -184,11 +192,11 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
                   progress.configurationGenerated(attemptID: current) else { return }
             sentConfiguration = true
             phase = "Esperando confirmación Bluetooth…"
-            events.append("Parámetros NI entregados al transporte Bluetooth; todavía no confirma recepción ni compatibilidad de radio.")
+            log("Parámetros NI entregados al transporte Bluetooth; todavía no confirma recepción ni compatibilidad de radio.")
             sendConfiguration?(translated)
         } catch {
             let fields = UWBDiagnostics.unsupportedSamsungFields(parameters, accessoryAddress: accessoryAddress)
-            if !fields.isEmpty { events.append("Campos fuera del perfil Samsung: " + fields.joined(separator: ", ") + ".") }
+            if !fields.isEmpty { log("Campos fuera del perfil Samsung: " + fields.joined(separator: ", ") + ".") }
             fail(UWBDiagnostics.rejection(error, stage: .samsungTranslation))
         }
     }
@@ -202,7 +210,7 @@ final class NearbyInteractionClient: NSObject, ObservableObject, NISessionDelega
         let measured = raw.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
         let windowOpen = progress.acceptsMeasurements(attemptID: current, now: now)
         if progress.observeUpdate(attemptID: current) {
-            events.append("Actualización NI #\(progress.updateCount): objeto esperado \(object == nil ? "ausente" : "presente"), distancia válida \(measured == nil ? "ausente" : "presente"); etapa \(progress.stage.label), confirmación de transporte \(windowOpen ? "recibida" : "pendiente").")
+            log("Actualización NI #\(progress.updateCount): objeto esperado \(object == nil ? "ausente" : "presente"), distancia válida \(measured == nil ? "ausente" : "presente"); etapa \(progress.stage.label), confirmación de transporte \(windowOpen ? "recibida" : "pendiente").")
         }
         guard object != nil, sentConfiguration, windowOpen else {
             _ = acceptDistance?(nil)

@@ -27,8 +27,24 @@ La app concede 30 segundos para preparar NI y confirmar la configuración por
 Bluetooth. El ACK de configuración del intento actual cancela ese temporizador y
 abre otro plazo completo de 30 segundos para la medición. Usa un reloj monotónico;
 ACKs o mediciones que lleguen al vencer el plazo no reviven el intento aunque la
-tarea del temporizador todavía no se haya ejecutado. El límite Bluetooth existente
-de 30 segundos tras su ACK permanece activo.
+tarea del temporizador todavía no se haya ejecutado. NI gobierna ese plazo de
+medición; Bluetooth conserva un límite de seguridad de 35 segundos desde su ACK,
+con 5 segundos de margen para no competir con el mismo vencimiento de NI.
+Esto no amplía el plazo de medición ni demuestra compatibilidad de radio.
+
+Cada temporizador Bluetooth valida su operación y generación de conexión antes
+de actuar. Un vencimiento cancelado o reemplazado no puede cerrar una operación
+posterior. STOP dispone de hasta 3 segundos para que termine una escritura previa,
+y otros 3 segundos desde su envío real para recibir confirmación. Repetir la
+parada no extiende esos plazos. El cierre Bluetooth conserva su barrera de
+confirmación y un límite independiente de 5 segundos.
+
+Los dos registros usan el prefijo `[+1.234 s]`, con un mismo origen monotónico de
+la ejecución de la app. Limpiar un registro no reinicia su reloj. El motivo de fin
+NI se registra antes de iniciar la limpieza; petición, espera, envío y confirmación
+de STOP y petición/confirmación de cierre se distinguen. Las secciones permanecen
+separadas: compará sus tiempos para reconstruir el orden, sin asumir que un eco o
+un callback de inicio prueba comunicación de medición UWB.
 
 El registro distingue solicitar la sesión de observar `sessionDidStartRunning`.
 La ausencia del callback se informa como no observada, sin afirmar que la radio no
