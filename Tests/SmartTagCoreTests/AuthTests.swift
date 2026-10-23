@@ -89,6 +89,29 @@ final class AuthTests: XCTestCase {
         XCTAssertNotNil(device)
         XCTAssertFalse(device!.metadataReady)
     }
+    func testSamsungCipherMetadataCanProduceCredentials() throws {
+        let fixtureKey = Data(0..<16).base64EncodedString()
+        for cipher in ["AES-CBC-PKCS7Padding", "AES_128-CBC-PKCS7Padding", "aes_128-cbc-pkcs5padding"] {
+            let device = try XCTUnwrap(TagDevice(json: ["deviceId":"fixture", "type":"BLE_D2D",
+                "bleD2D":["encryptionKey":fixtureKey, "cipher":cipher]]))
+            XCTAssertTrue(device.metadataReady, cipher)
+            XCTAssertEqual(try device.credentials().masterSecret, Data(0..<16))
+            XCTAssertEqual(try device.credentials().cipher, "AES/CBC/PKCS7Padding")
+        }
+    }
+    func testUnsupportedOrMissingCipherMetadataStaysBlocked() throws {
+        let fixtureKey = Data(0..<16).base64EncodedString()
+        for cipher in ["AES_256-CBC-PKCS7Padding", "AES-GCM-PKCS7Padding", "", "unknown"] {
+            let device = try XCTUnwrap(TagDevice(json: ["deviceId":"fixture", "type":"BLE_D2D",
+                "bleD2D":["encryptionKey":fixtureKey, "cipher":cipher]]))
+            XCTAssertFalse(device.metadataReady, cipher)
+            XCTAssertThrowsError(try device.credentials())
+        }
+        let missing = try XCTUnwrap(TagDevice(json: ["deviceId":"fixture", "type":"BLE_D2D",
+            "bleD2D":["encryptionKey":fixtureKey]]))
+        XCTAssertFalse(missing.metadataReady)
+        XCTAssertThrowsError(try missing.credentials())
+    }
     func testFormEscapesBase64PlusAndEquals() {
         XCTAssertEqual(String(data: SamsungAuth.form(["svcParam":"a+b/c=="]), encoding: .utf8), "svcParam=a%2Bb%2Fc%3D%3D")
         XCTAssertEqual(SamsungAuth.queryURL(URLComponents(string:"https://account.samsung.com/test?x=a+b")!)?.absoluteString, "https://account.samsung.com/test?x=a%2Bb")

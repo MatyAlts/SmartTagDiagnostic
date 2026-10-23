@@ -22,6 +22,33 @@ final class ProtocolTests: XCTestCase {
         XCTAssertThrowsError(try Data(hex: "xx"))
     }
 
+    func testSupportedCipherDescriptorsUseOneCanonicalTransform() throws {
+        for cipher in ["AES/CBC/PKCS5Padding", "aes/cbc/pkcs7padding",
+                       "AES-CBC-PKCS5Padding", "aes-cbc-pkcs7padding",
+                       "AES_128-CBC-PKCS5Padding", "aes_128-cbc-pkcs7padding"] {
+            let credentials = try TagCredentials(deviceID: "fixture", masterSecret: master, cipher: cipher)
+            XCTAssertEqual(credentials.cipher, "AES/CBC/PKCS7Padding", cipher)
+            let nonce = Data(repeating: 7, count: 16)
+            let proof = try SmartTagCrypto.encrypt(Data("smartthings".utf8), key: credentials.masterSecret, iv: nonce)
+            XCTAssertNoThrow(try SmartTagCrypto.verifyProof(proof, key: credentials.masterSecret, phoneNonce: nonce))
+        }
+    }
+
+    func testCipherDescriptorsRejectUnsupportedAndMalformedTransforms() {
+        for cipher in ["", "AES", "AES-CBC", "AES_256-CBC-PKCS7Padding",
+                       "AES-GCM-PKCS7Padding", "AES-ECB-PKCS7Padding", "AES-CBC-NoPadding",
+                       "AES-AES-CBC-PKCS7Padding", "AES_128_128-CBC-PKCS7Padding",
+                       "-AES-CBC-PKCS7Padding", "AES-CBC-PKCS7Padding-",
+                       "AES--CBC-PKCS7Padding", "AES_128-CBC-PKCS7Padding-extra",
+                       "AES/CBC/PKCS7Padding/", " AES-CBC-PKCS7Padding", "unknown"] {
+            XCTAssertThrowsError(try TagCredentials(deviceID: "fixture", masterSecret: master, cipher: cipher), cipher) { error in
+                guard case TagProtocolError.unsupportedCipher = error else {
+                    return XCTFail("Expected unsupported cipher")
+                }
+            }
+        }
+    }
+
     func testAESKnownVectorAndMalformedCiphertext() throws {
         let key = try Data(hex: "2b7e151628aed2a6abf7158809cf4f3c")
         let iv = try Data(hex: "000102030405060708090a0b0c0d0e0f")
