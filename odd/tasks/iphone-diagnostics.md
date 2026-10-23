@@ -29,11 +29,21 @@ User can start login, select an actual device, see missing/cipher metadata error
 - Simulator/hardware and all Swift test execution are still pending; tasks above remain unchecked for these required verification outcomes. Source implementation is delivered.
 - Source QA: all reported static integration fixes resolved, including explicit app-test package dependency. No native RDD run (disabled/unmanaged).
 - App-bridge XCTest adds six PBKDF2/AES/callback/SPKI cases; total native test methods: 26 (not executed). UI fixture bypasses Keychain/network; Bluetooth is initialized only on explicit scan. Static fixes rechecked without claiming native validation.
-- Next: final portable recheck and checkpoint; an authorized macOS build is required before installation.
+- Final portable recheck passed: 3/3 Python tests, plist/reference validation, both YAMLs, design JSON, test-target/package wiring, manual/PR-only workflow and whitespace checks. The worktree was clean after source commits. No native execution, Simulator capture, account login or tag connection was performed.
+- Next: publish only when authorized and run the prepared macOS workflow, sign the unsigned IPA, then validate login and physical authentication/battery. Source ZIP is provided separately from the original APK/IPA.
 
 ## Commit boundaries
 - Bootstrap `2381a11`: isolated feature tracker; `main` points to this initial boundary, implementation stays on `feat/iphone-diagnostics`.
 - T1 `cbe029a`: protocol + BLE + tests/docs, 529 authored lines. One cohesive local commit; for future stacked PRs the core (283 lines) and transport (246 lines) are natural review slices. No PR created, no size-only code shrinking; native tests pending.
 - T2 `386caa1`: owner session, metadata, Keychain, tests and provenance; 577 authored lines plus 674-line verbatim upstream GPL license. A cohesive account unit exceeds the planning heuristic; future review can separate the pure account contracts from the iOS bridge, without shortening source/tests to fit. No PR created.
-- Running authored count T1+T2: 1,106 (upstream LICENSE excluded). T3 commit pending.
+- T3 `8b2278a`: native UI, generator, app/unit/UI test wiring, CI, build/design documentation and recovery update; 550 authored additions/deletions. Natural future review slices: UI/project/native evidence versus CI/build tooling; no PR created.
+- Running authored count of the three implementation commits: 1,656 (verbatim upstream LICENSE excluded); final recovery bookkeeping is separate. Delivery remains stacked-to-main when publishing is authorized, with no remote operations in this session.
 - Rollback T1: remove protocol/core tests, BLE transport and protocol notes/manifest as a unit; no account data exists. Rollback T2: remove account core/bridge/tests and account notes; no live account data exists. Retain license/provenance for any remaining derived source.
+- Rollback T3: remove app shell/project/workflow/config verification and surface records, retaining independently usable core source. Runtime checks remain pending rather than fabricated approvals.
+
+## TDD cycle evidence
+| Task | Test file | Layer | Safety net | RED | GREEN | Triangulation | Refactor |
+|---|---|---|---|---|---|---|---|
+| T1 | Tests/SmartTagCoreTests/ProtocolTests.swift | Core protocol | Greenfield; native runner unavailable | Authored first; native execution pending | Native pending; independent KDF/AES vectors passed | 11 methods, event-order/error cases authored | Static fixes; native rerun pending |
+| T2 | Tests/SmartTagCoreTests/AuthTests.swift; Tests/AppTests/AccountSecurityTests.swift | Account contract and native bridge | Existing Swift tests could not run on Windows | Authored before behavior; bridge vectors added for existing helper | Native pending | 7 account + 6 crypto methods authored | Static source corrections; native rerun pending |
+| T3 | scripts/test_verify_project.py; Tests/UITests/DiagnosticUITests.swift | Config and UI | No existing app | Portable missing-module RED observed; UI authored first | Portable 3/3; native pending | 3 config cases and 2 UI methods | Final portable recheck passed; UI pending |
