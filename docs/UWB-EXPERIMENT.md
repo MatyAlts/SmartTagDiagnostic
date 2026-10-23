@@ -12,6 +12,12 @@ Todavía no se ha demostrado una medición real con Cleo. Una conexión Bluetoot
 
 ## Apple configuration bridge
 
+### Inspección de notificaciones Bluetooth
+
+La notificación de parámetros UWB se inspecciona solo dentro de la conexión Bluetooth autenticada. Se aplica el descifrado AES-CBC existente, la trama con contador de cuatro bytes y la secuencia de recepción compartida con la batería. El registro informa únicamente longitud de la carga descifrada o rechazo por cifrado/relleno, trama incompleta o repetición; no registra claves, IV, contadores ni contenido.
+
+Una respuesta de 48 bytes puede contener una trama cifrada, pero su longitud no identifica el contenido. Las pruebas usan datos sintéticos: todavía no disponemos del contenido de la respuesta real de Cleo. El relleno CBC válido no demuestra integridad criptográfica, ni la inspección identifica un estado de éxito UWB. La carga desconocida no se interpreta ni produce distancia y su rechazo no cancela por sí solo la sesión de Nearby Interaction.
+
 The trial uses public Nearby Interaction foreground accessory APIs. Its compatibility with SmartTag2 firmware is unproven. Configuration acceptance and Bluetooth write acknowledgements do not establish a distance measurement.
 
 The [Apple accessory protocol R4](https://developer.apple.com/download/files/Nearby-Interaction-Accessory-Protocol-Specification-R4.pdf), section 3.4, defines the outer configuration header: version 1.0, preferred update rate 0 (automatic), ten reserved zero bytes, and the inner length. [Interoperability R3](https://developer.apple.com/download/files/Nearby-Interaction-with-UWB-Interoperability-Specification-R3.pdf), section 4, defines the version 1.1 inner configuration and generated output. The [R4 interoperability preview](https://developer.apple.com/download/files/Nearby-Interaction-with-UWB-Interoperability-Specification-Developer-Preview-R4.pdf) defines version 2.0 requests. The published tables were obtained from Apple's indexed document text; direct PDF retrieval returned 404 during research.

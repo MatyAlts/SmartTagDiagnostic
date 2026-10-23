@@ -467,7 +467,22 @@ extension TagBluetoothClient: CBPeripheralDelegate {
         guard self.peripheral === peripheral else { return }
         guard uwbFlow.state != .stopping else { return }
         if characteristic.uuid == Self.uwbParameters {
-            if forUWB { log("Se recibió un mensaje UWB de \(characteristic.value?.count ?? 0) bytes; su contenido no se interpreta.") }
+            guard forUWB, proofVerified, peripheral.state == .connected,
+                  let tagNonce, let credentials else { return }
+            guard error == nil, let value = characteristic.value else {
+                log("No se pudo leer la notificación UWB."); return
+            }
+            switch UWBNotificationInspector.inspect(ciphertext: value,
+                master: credentials.masterSecret, tagNonce: tagNonce, replay: &replay) {
+            case .accepted(let payloadLength):
+                log("Notificación UWB descifrada: carga de \(payloadLength) bytes; contenido desconocido, sin medición de distancia.")
+            case .invalidCiphertext:
+                log("Notificación UWB descartada: cifrado o relleno no válido.")
+            case .invalidFrame:
+                log("Notificación UWB descartada: trama descifrada incompleta.")
+            case .replayRejected:
+                log("Notificación UWB descartada: mensaje repetido o fuera de orden.")
+            }
             return
         }
         guard error == nil, let value = characteristic.value, let credentials else { fail("Falló la lectura Bluetooth."); return }
