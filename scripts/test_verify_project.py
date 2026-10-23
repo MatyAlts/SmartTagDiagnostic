@@ -1,8 +1,9 @@
 import plistlib
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
-from verify_project import inspect_plist, inspect_target_types
+from verify_project import inspect_plist, inspect_target_types, inspect_artifact
 
 
 class ConfigurationSafetyTests(unittest.TestCase):
@@ -40,8 +41,52 @@ class ConfigurationSafetyTests(unittest.TestCase):
     def test_minimal_scoped_configuration_is_accepted(self):
         errors = self.check_plist({
             'NSBluetoothAlwaysUsageDescription': 'Read owned tag battery',
-            'CFBundleURLTypes': [{'CFBundleURLSchemes': ['ms-app']}]})
+            'CFBundleURLTypes': [{'CFBundleURLSchemes': ['ms-app']}],
+            'UILaunchScreen': {}})
         self.assertEqual([], errors)
+
+    def test_missing_launch_configuration_is_rejected(self):
+        errors = self.check_plist({
+            'NSBluetoothAlwaysUsageDescription': 'Read owned tag battery',
+            'CFBundleURLTypes': [{'CFBundleURLSchemes': ['ms-app']}]})
+        self.assertIn('Native launch screen configuration is missing', errors)
+
+    def test_packaged_plist_preserves_launch_privacy_and_callback(self):
+        values = {
+            'CFBundleIdentifier': 'org.local.SmartTagDiagnostic',
+            'NSBluetoothAlwaysUsageDescription': 'Read owned tag battery',
+            'CFBundleURLTypes': [{'CFBundleURLSchemes': ['ms-app']}],
+            'UILaunchScreen': {}, 'UIDeviceFamily': [1]}
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory) / 'SmartTagDiagnostic.app'
+            app.mkdir()
+            (app / 'Info.plist').write_bytes(plistlib.dumps(values))
+            self.assertEqual([], inspect_artifact(app))
+            ipa = Path(directory) / 'diagnostic.ipa'
+            with zipfile.ZipFile(ipa, 'w') as archive:
+                archive.writestr('Payload/SmartTagDiagnostic.app/Info.plist', plistlib.dumps(values))
+            self.assertEqual([], inspect_artifact(ipa))
+
+    def test_old_generated_ipa_metadata_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ipa = Path(directory) / 'diagnostic.ipa'
+            with zipfile.ZipFile(ipa, 'w') as archive:
+                archive.writestr('Payload/SmartTagDiagnostic.app/Info.plist', plistlib.dumps({
+                    'CFBundleIdentifier': 'org.local.SmartTagDiagnostic',
+                    'UIDeviceFamily': [1, 2]}))
+            errors = inspect_artifact(ipa)
+            self.assertIn('Native launch screen configuration is missing', errors)
+            self.assertIn('Bluetooth permission explanation is missing', errors)
+            self.assertIn('Account callback scheme is missing', errors)
+            self.assertIn('Diagnostic must target iPhone only', errors)
+
+    def test_unrelated_bundle_cannot_pass_artifact_validation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory) / 'Other.app'
+            app.mkdir()
+            (app / 'Info.plist').write_bytes(plistlib.dumps({
+                'CFBundleIdentifier': 'other.application', 'UIDeviceFamily': [1]}))
+            self.assertIn('Unexpected diagnostic bundle identifier', inspect_artifact(app))
 
 
 if __name__ == '__main__':

@@ -16,11 +16,11 @@ targets:
     type: application
     platform: iOS
     sources: [App]
-    info:
-      path: App/Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.local.SmartTagDiagnostic
+        INFOPLIST_FILE: App/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: NO
     dependencies:
       - package: SmartTagCore

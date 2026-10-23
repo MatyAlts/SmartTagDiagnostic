@@ -21,7 +21,10 @@ jobs:
       - name: Test core
         run: swift test
       - name: Generate project
-        run: xcodegen generate
+        run: |
+          xcodegen generate
+          git diff --exit-code -- App/Info.plist
+          python3 scripts/verify_project.py
       - name: Select installed iPhone simulator
         run: |
           xcrun simctl list devices available -j > /tmp/devices.json
@@ -35,6 +38,11 @@ jobs:
       - name: Build and test simulator app
         run: |
           xcodebuild test -project SmartTagDiagnostic.xcodeproj -scheme SmartTagDiagnostic -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -resultBundlePath build/UITests.xcresult CODE_SIGNING_ALLOWED=NO
+      - name: Capture native iPhone layout
+        run: |
+          xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" org.local.SmartTagDiagnostic -ui-testing
+          sleep 3
+          xcrun simctl io "$SIMULATOR_ID" screenshot build/iphone-layout.png
       - name: Archive unsigned app
         run: |
           xcodebuild archive -project SmartTagDiagnostic.xcodeproj -scheme SmartTagDiagnostic -destination 'generic/platform=iOS' -archivePath build/SmartTagDiagnostic.xcarchive CODE_SIGNING_ALLOWED=NO
@@ -42,6 +50,10 @@ jobs:
           ditto build/SmartTagDiagnostic.xcarchive/Products/Applications/SmartTagDiagnostic.app build/package/Payload/SmartTagDiagnostic.app
           cd build/package
           ditto -c -k --sequesterRsrc --keepParent Payload ../SmartTagDiagnostic-unsigned.ipa
+      - name: Verify packaged metadata
+        run: |
+          python3 scripts/verify_project.py build/SmartTagDiagnostic.xcarchive/Products/Applications/SmartTagDiagnostic.app
+          python3 scripts/verify_project.py build/SmartTagDiagnostic-unsigned.ipa
       - name: Upload unsigned application
         uses: actions/upload-artifact@v4
         with:
@@ -55,5 +67,13 @@ jobs:
         with:
           name: simulator-test-results
           path: build/UITests.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload native iPhone screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iphone-layout
+          path: build/iphone-layout.png
           if-no-files-found: ignore
           retention-days: 7

@@ -1,6 +1,8 @@
 """Portable configuration checks; does not compile Swift or prove interoperability."""
 import plistlib
 import re
+import sys
+import zipfile
 from pathlib import Path
 
 
@@ -14,7 +16,10 @@ def inspect_target_types(spec):
 
 
 def inspect_plist(path):
-    info = plistlib.loads(path.read_bytes())
+    return inspect_metadata(plistlib.loads(path.read_bytes()))
+
+
+def inspect_metadata(info):
     errors = []
     if not info.get('NSBluetoothAlwaysUsageDescription', '').strip():
         errors.append('Bluetooth permission explanation is missing')
@@ -24,10 +29,33 @@ def inspect_plist(path):
         errors.append('Account callback scheme is missing')
     if info.get('UIBackgroundModes'):
         errors.append('Background operation is outside diagnostic scope')
+    if not isinstance(info.get('UILaunchScreen'), dict):
+        errors.append('Native launch screen configuration is missing')
+    return errors
+
+
+def inspect_artifact(path):
+    if path.suffix.lower() == '.ipa':
+        with zipfile.ZipFile(path) as archive:
+            info = plistlib.loads(archive.read('Payload/SmartTagDiagnostic.app/Info.plist'))
+    else:
+        info = plistlib.loads((path / 'Info.plist').read_bytes())
+    errors = inspect_metadata(info)
+    if info.get('UIDeviceFamily') != [1]:
+        errors.append('Diagnostic must target iPhone only')
+    if info.get('CFBundleIdentifier') != 'org.local.SmartTagDiagnostic':
+        errors.append('Unexpected diagnostic bundle identifier')
     return errors
 
 
 def main():
+    if len(sys.argv) > 1:
+        artifact = Path(sys.argv[1])
+        errors = inspect_artifact(artifact)
+        if errors:
+            raise SystemExit('\n'.join(errors))
+        print('PASS: built app launch configuration, iPhone family, Bluetooth privacy and callback.')
+        return
     root = Path(__file__).resolve().parents[1]
     errors = inspect_plist(root / 'App/Info.plist')
     errors.extend(inspect_target_types((root / 'project.yml').read_text(encoding='utf-8')))
